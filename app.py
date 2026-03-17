@@ -37,39 +37,12 @@ def init_db():
 
 conn, c = init_db()
 
-# Lógica de extracción REFINADA
-def extraer_datos_v2(texto, tipo):
-    datos = {"numero": "", "fecha": "", "proveedor": ""}
-    # Limpiamos líneas vacías y eliminamos ruidos comunes
-    lineas = [l.strip() for l in texto.split('\n') if len(l.strip()) > 3]
-    
-    # 1. Extraer Proveedor (Buscamos la primera línea con sentido)
-    ignore_list = ["+---", "NIT", "FECHA", "FACTURA", "PÁGINA", "PAGINA", "TEL", "DIRECCIÓN", "ELECTRONICA"]
-    for l in lineas[:8]:
-        if not any(x in l.upper() for x in ignore_list):
-            datos["proveedor"] = l
-            break
-
-    # 2. Extraer Fecha
-    match_fecha = re.search(r'(?:FECHA|EMISIÓN|GENERACIÓN|FECHA VALOR).*?(\d{1,2}[/-]\d{1,2}[/-]\d{4}|\d{4}[/-]\d{1,2}[/-]\d{1,2})', texto, re.IGNORECASE | re.DOTALL)
-    if match_fecha:
-        datos["fecha"] = match_fecha.group(1)
-    else:
-        todas_fechas = re.findall(r'(\d{1,2}[/-]\d{1,2}[/-]\d{4})', texto)
-        if todas_fechas: datos["fecha"] = todas_fechas[0]
-
-    # 3. Extraer Número
-    if tipo == "Factura de Compra":
-        match_num = re.search(r'(?:FACTURA|VENTA|ELECTRÓNICA).*?(?:NO\.|NRO|NUMERO)[:\s#]*([A-Z0-9-]+)', texto, re.IGNORECASE | re.DOTALL)
-        if match_num:
-            datos["numero"] = match_num.group(1)
-    else:
-        # Manifiestos/Declaraciones (Número largo)
-        match_acep = re.search(r'(?:ACEPTACIÓN|DECLARACIÓN).*?[:\s#]*(\d{10,20})', texto, re.IGNORECASE | re.DOTALL)
-        if match_acep:
-            datos["numero"] = match_acep.group(1)
-
-    return datos
+# Extracción simplificada enfocada en FECHA
+def extraer_fecha_y_limpiar(texto):
+    # Buscar fecha (DD/MM/AAAA o AAAA/MM/DD)
+    match_fecha = re.search(r'(\d{1,2}[/-]\d{1,2}[/-]\d{4}|\d{4}[/-]\d{1,2}[/-]\d{1,2})', texto)
+    fecha_sugerida = match_fecha.group(1) if match_fecha else datetime.now().strftime("%d/%m/%Y")
+    return fecha_sugerida
 
 def abrir_pdf_js(bin_file, page_num=1):
     base64_pdf = base64.b64encode(bin_file).decode('utf-8')
@@ -99,61 +72,63 @@ with st.sidebar:
     st.title("🛡️ Cronosol")
     choice = st.radio("Operaciones", ["🔍 Buscador Rápido", "📤 Cargar Documentos"])
     st.divider()
-    st.info("Sistema de Gestión de Documentación de Aduana.")
+    st.info("Filtre referencias por fecha y página.")
 
 if choice == "📤 Cargar Documentos":
-    st.header("Carga Masiva con Extracción")
+    st.header("Carga Masiva de Documentos")
     tipo_doc = st.radio("Tipo de archivos:", ["Factura de Compra", "Manifiesto de Aduana"], horizontal=True)
     
-    # El uploader refresca la página al cambiar archivos
     archivos = st.file_uploader(f"Arrastre sus archivos PDF", type="pdf", accept_multiple_files=True)
 
     if archivos:
-        # Usamos un botón para iniciar el análisis explícitamente y evitar duplicados de caché
-        if st.button("🔍 Analizar Archivos"):
+        if st.button("⚡ Analizar y Preparar Carga"):
             st.session_state.pendientes = []
             
-            with st.spinner("Leyendo documentos..."):
-                for f in archivos:
-                    f.seek(0) # Resetear puntero de lectura
-                    pdf_bytes = f.read()
-                    doc_id = hashlib.sha256(pdf_bytes).hexdigest()
+            for f in archivos:
+                f.seek(0)
+                pdf_bytes = f.read()
+                doc_id = hashlib.sha256(pdf_bytes).hexdigest()
+                
+                # Extraemos solo la fecha de la primera página
+                with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+                    texto_meta = doc[0].get_text()
+                    fecha_sug = extraer_fecha_y_limpiar(texto_meta)
                     
-                    with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
-                        texto_meta = ""
-                        # Analizamos las primeras 2 páginas para mayor contexto
-                        for p in range(min(2, len(doc))):
-                            texto_meta += doc[p].get_text()
-                        
-                        sugerencias = extraer_datos_v2(texto_meta, tipo_doc)
-                        
-                        st.session_state.pendientes.append({
-                            "id": doc_id, "nombre": f.name, "tipo": tipo_doc,
-                            "numero": sugerencias["numero"], "proveedor": sugerencias["proveedor"],
-                            "fecha": sugerencias["fecha"], "blob": pdf_bytes
-                        })
+                    # Usamos el nombre del archivo como base para proveedor/número
+                    nombre_base = f.name.replace(".pdf", "").replace(".PDF", "")
+                    
+                    st.session_state.pendientes.append({
+                        "id": doc_id, 
+                        "nombre": f.name, 
+                        "tipo": tipo_doc,
+                        "numero": nombre_base, # Sugerencia basada en nombre de archivo
+                        "proveedor": "POR DEFINIR", 
+                        "fecha": fecha_sug, 
+                        "blob": pdf_bytes
+                    })
 
-        # Mostrar tarjetas de revisión si hay pendientes
         if 'pendientes' in st.session_state and st.session_state.pendientes:
-            st.subheader("📋 Revisión de datos")
+            st.subheader("📋 Verificación Rápida")
+            st.caption("Ajuste la fecha si es necesario. El número y proveedor se basan en el nombre del archivo.")
             documentos_finales = []
             
             for i, d in enumerate(st.session_state.pendientes):
                 with st.container():
                     st.markdown('<div class="upload-card">', unsafe_allow_html=True)
-                    st.write(f"📄 **{d['nombre']}**")
-                    c1, c2, c3 = st.columns(3)
+                    c1, c2, c3 = st.columns([3, 2, 2])
                     with c1:
-                        new_num = st.text_input("Número", value=d['numero'], key=f"n_{d['id']}_{i}")
+                        # El nombre del archivo ayuda a identificar de quién es
+                        st.markdown(f"📄 **{d['nombre']}**")
+                        new_prov = st.text_input("Proveedor/Detalle", value=d['proveedor'], key=f"p_{d['id']}")
                     with c2:
-                        new_prov = st.text_input("Proveedor", value=d['proveedor'], key=f"p_{d['id']}_{i}")
+                        new_num = st.text_input("No. Documento", value=d['numero'], key=f"n_{d['id']}")
                     with c3:
-                        new_fec = st.text_input("Fecha", value=d['fecha'], key=f"f_{d['id']}_{i}")
+                        new_fec = st.text_input("Fecha", value=d['fecha'], key=f"f_{d['id']}")
                     
                     documentos_finales.append({**d, "numero": new_num, "proveedor": new_prov, "fecha": new_fec})
                     st.markdown('</div>', unsafe_allow_html=True)
 
-            if st.button("🚀 Guardar Todo en Base de Datos"):
+            if st.button("🚀 Guardar e Indexar Todo"):
                 bar = st.progress(0)
                 for idx, doc in enumerate(documentos_finales):
                     texto_full = ""
@@ -175,23 +150,23 @@ if choice == "📤 Cargar Documentos":
                     
                     bar.progress((idx + 1) / len(documentos_finales))
                 
-                st.success("✅ Guardado exitoso.")
+                st.success(f"✅ {len(documentos_finales)} documentos guardados.")
                 st.session_state.pendientes = []
                 st.rerun()
 
 elif choice == "🔍 Buscador Rápido":
-    st.header("Buscador de Trazabilidad")
-    query = st.text_input("Referencia a buscar").upper()
+    st.header("Buscador de Referencias")
+    query = st.text_input("Ingrese referencia o palabra clave").upper()
 
     if query:
         c.execute("SELECT id, tipo, numero, fecha, proveedor, nombre_archivo, paginas_json, pdf_blob FROM documentos WHERE contenido LIKE ?", (f'%{query}%',))
         res = c.fetchall()
         
         if res:
-            st.write(f"Resultados: **{len(res)}**")
+            st.write(f"Resultados encontrados: **{len(res)}**")
             for r in res:
                 doc_id, tipo, num, fecha, prov, nombre, pags, blob = r
-                with st.expander(f"📌 {tipo}: {num} - {prov}"):
+                with st.expander(f"📅 {fecha} | {tipo}: {num} ({prov})"):
                     encontrado = []
                     if pags:
                         p_dict = json.loads(pags)
@@ -199,13 +174,13 @@ elif choice == "🔍 Buscador Rápido":
                     
                     col_i, col_b = st.columns([2, 1])
                     with col_i:
-                        st.write(f"**Fecha:** {fecha} | **Archivo:** {nombre}")
+                        st.write(f"Archivo original: `{nombre}`")
                         if encontrado:
-                            st.markdown(f'<div class="highlight-page">📍 Página(s): {", ".join(map(str, encontrado))}</div>', unsafe_allow_html=True)
+                            st.markdown(f'<div class="highlight-page">📍 Encontrado en página(s): {", ".join(map(str, encontrado))}</div>', unsafe_allow_html=True)
                     
-                    with col_b:
+                    with col_btn_vis := col_b:
                         p_dest = encontrado[0] if encontrado else 1
                         st.components.v1.html(abrir_pdf_js(blob, p_dest), height=70)
-                        st.download_button("💾 Bajar", blob, nombre, "application/pdf", key=f"d_{doc_id}")
+                        st.download_button("💾 Descargar", blob, nombre, "application/pdf", key=f"d_{doc_id}")
         else:
-            st.error("No se encontró la referencia.")
+            st.error("No se encontraron coincidencias para esa referencia.")
