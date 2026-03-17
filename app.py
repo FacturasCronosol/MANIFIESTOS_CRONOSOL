@@ -10,7 +10,7 @@ import os
 from datetime import datetime
 
 # Configuración profesional
-st.set_page_config(page_title="Gestión Cronosol - DIAN", layout="wide", page_icon="🛡️")
+st.set_page_config(page_title="CRONOSOL - DIAN", layout="wide", page_icon="https://drive.google.com/file/d/1Q7StetNrzbkMmAOUifHderoCuI3amPjt/view")
 
 # Estilo personalizado
 st.markdown("""
