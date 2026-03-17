@@ -5,17 +5,40 @@ import sqlite3
 import hashlib
 import base64
 
-# Configuración profesional
+# Configuración profesional para visualización en PC y Móvil
 st.set_page_config(page_title="Gestión Cronosol - DIAN", layout="wide", page_icon="🛡️")
 
-# Estilo personalizado
+# Estilo personalizado para botones táctiles grandes
 st.markdown("""
     <style>
-    .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #007bff; color: white; }
+    .stButton>button { 
+        width: 100%; 
+        border-radius: 8px; 
+        height: 3.5em; 
+        background-color: #007bff; 
+        color: white; 
+        font-weight: bold;
+    }
+    .open-pdf-btn {
+        display: inline-block;
+        padding: 0.75em 1.5em;
+        background-color: #28a745;
+        color: white;
+        text-decoration: none;
+        border-radius: 8px;
+        width: 100%;
+        text-align: center;
+        font-weight: bold;
+        margin-top: 10px;
+    }
+    .open-pdf-btn:hover {
+        background-color: #218838;
+        color: white;
+    }
     </style>
     """, unsafe_allow_html=True)
 
-# Base de datos
+# Inicialización de la base de datos
 conn = sqlite3.connect('gestion_cronosol.db', check_same_thread=False)
 c = conn.cursor()
 c.execute('''CREATE TABLE IF NOT EXISTS documentos 
@@ -23,72 +46,97 @@ c.execute('''CREATE TABLE IF NOT EXISTS documentos
               proveedor TEXT, contenido TEXT, nombre_archivo TEXT, pdf_blob BLOB)''')
 conn.commit()
 
-def mostrar_pdf(bin_file):
+# Función para generar el enlace de apertura en pestaña nueva
+def get_pdf_display_link(bin_file, file_name):
     base64_pdf = base64.b64encode(bin_file).decode('utf-8')
-    pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
-    st.markdown(pdf_display, unsafe_allow_html=True)
+    # Usamos un enlace HTML con target="_blank" para abrir en pestaña nueva
+    href = f'<a href="data:application/pdf;base64,{base64_pdf}" target="_blank" class="open-pdf-btn">📄 Abrir PDF en pestaña nueva</a>'
+    return href
 
 # --- MENÚ LATERAL ---
 with st.sidebar:
-    st.title("🛡️ Cronosol Legalidad")
-    choice = st.radio("Acciones", ["🔍 Buscador de Referencias", "📤 Cargar Documentos"])
-    st.info("Sistema de trazabilidad para inspecciones DIAN.")
+    st.title("🛡️ Cronosol")
+    choice = st.radio("Menú de Operaciones", ["🔍 Buscador Rápido", "📤 Cargar Documentos"])
+    st.divider()
+    st.info("Utilice el buscador para localizar referencias en facturas y manifiestos de aduana.")
 
 # --- MÓDULO DE CARGA ---
 if choice == "📤 Cargar Documentos":
-    st.header("Registro de Nueva Mercancía")
-    col1, col2 = st.columns(2)
-    with col1:
-        tipo = st.selectbox("Documento", ["Factura de Compra", "Manifiesto de Aduana"])
-        numero = st.text_input(f"Número de {tipo}")
-    with col2:
-        proveedor = st.text_input("Nombre del Proveedor / Importador")
-        fecha = st.date_input("Fecha del Documento")
+    st.header("Registro de Nuevos Documentos")
+    
+    with st.form("form_carga", clear_on_submit=True):
+        col1, col2 = st.columns(2)
+        with col1:
+            tipo = st.selectbox("Tipo de Documento", ["Factura de Compra", "Manifiesto de Aduana"])
+            numero = st.text_input("Número del Documento (ID)")
+        with col2:
+            proveedor = st.text_input("Proveedor / Importador")
+            fecha = st.date_input("Fecha de Emisión")
+            
+        archivo = st.file_uploader("Subir archivo PDF", type="pdf")
+        submit = st.form_submit_button("Guardar en Base de Datos")
 
-    archivo = st.file_uploader("Subir PDF Original", type="pdf")
-
-    if st.button("Guardar en el Historial"):
-        if archivo and numero and proveedor:
-            pdf_bytes = archivo.read()
-            doc_id = hashlib.sha256(pdf_bytes).hexdigest()
-            c.execute("SELECT numero FROM documentos WHERE id=?", (doc_id,))
-            if c.fetchone():
-                st.error("⚠️ Este archivo ya fue cargado previamente.")
+        if submit:
+            if archivo and numero and proveedor:
+                pdf_bytes = archivo.read()
+                doc_id = hashlib.sha256(pdf_bytes).hexdigest()
+                
+                c.execute("SELECT numero FROM documentos WHERE id=?", (doc_id,))
+                if c.fetchone():
+                    st.error("⚠️ Este documento ya existe en el sistema.")
+                else:
+                    with st.spinner("Indexando contenido..."):
+                        texto = ""
+                        with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+                            for pagina in doc:
+                                texto += pagina.get_text()
+                        
+                        c.execute("INSERT INTO documentos VALUES (?,?,?,?,?,?,?,?)", 
+                                  (doc_id, tipo, numero, str(fecha), proveedor.upper(), texto.upper(), archivo.name, pdf_bytes))
+                        conn.commit()
+                        st.success(f"✅ {tipo} guardado con éxito.")
             else:
-                texto = ""
-                with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
-                    for pagina in doc: texto += pagina.get_text()
-                c.execute("INSERT INTO documentos VALUES (?,?,?,?,?,?,?,?)", 
-                          (doc_id, tipo, numero, str(fecha), proveedor.upper(), texto.upper(), archivo.name, pdf_bytes))
-                conn.commit()
-                st.success(f"✅ {tipo} guardado correctamente.")
+                st.warning("Por favor complete todos los campos obligatorios.")
 
 # --- MÓDULO DE BÚSQUEDA ---
-elif choice == "🔍 Buscador de Referencias":
-    st.header("Consulta Instantánea")
-    query = st.text_input("Ingresa la referencia (ej: NF7125)").upper()
+elif choice == "🔍 Buscador Rápido":
+    st.header("Consulta de Trazabilidad")
+    query = st.text_input("Ingrese Referencia o Palabra Clave").upper()
 
     if query:
-        df = pd.read_sql_query(f"SELECT id, tipo, numero, fecha, proveedor, nombre_archivo FROM documentos WHERE contenido LIKE '%{query}%' ORDER BY fecha DESC", conn)
+        # Búsqueda global en el contenido extraído de los PDFs
+        df = pd.read_sql_query(f"""SELECT id, tipo, numero, fecha, proveedor, nombre_archivo 
+                                   FROM documentos 
+                                   WHERE contenido LIKE '%{query}%' 
+                                   ORDER BY fecha DESC""", conn)
         
         if not df.empty:
-            st.write(f"Resultados para: **{query}**")
-            seleccion = st.selectbox("Selecciona un documento:", df['id'], 
-                                     format_func=lambda x: f"{df[df['id']==x]['tipo'].values[0]} - {df[df['id']==x]['numero'].values[0]}")
+            st.write(f"Se encontraron **{len(df)}** registros relacionados con: `{query}`")
             
-            col_a, col_b = st.columns([1, 2])
-            with col_a:
-                doc_data = df[df['id'] == seleccion].iloc[0]
-                st.write(f"**Tipo:** {doc_data['tipo']}")
-                st.write(f"**Número:** {doc_data['numero']}")
-                st.write(f"**Proveedor:** {doc_data['proveedor']}")
-                
-                # Botón de descarga para evitar el bloqueo de Brave
-                c.execute("SELECT pdf_blob FROM documentos WHERE id=?", (seleccion,))
-                blob = c.fetchone()[0]
-                st.download_button(label="📥 Descargar PDF para Ver/Imprimir", data=blob, file_name=doc_data['nombre_archivo'], mime="application/pdf")
-            
-            with col_b:
-                mostrar_pdf(blob)
+            # Selector de resultados
+            for index, row in df.iterrows():
+                with st.expander(f"📌 {row['tipo']}: {row['numero']} - {row['proveedor']}"):
+                    col_info, col_btn = st.columns([2, 1])
+                    
+                    with col_info:
+                        st.write(f"**Fecha:** {row['fecha']}")
+                        st.write(f"**Archivo:** {row['nombre_archivo']}")
+                    
+                    with col_btn:
+                        # Recuperar el BLOB del PDF para este registro específico
+                        c.execute("SELECT pdf_blob FROM documentos WHERE id=?", (row['id'],))
+                        blob = c.fetchone()[0]
+                        
+                        # Mostrar el botón que abre el PDF en pestaña nueva
+                        st.markdown(get_pdf_display_link(blob, row['nombre_archivo']), unsafe_allow_html=True)
+                        
+                        # Botón opcional de descarga por si falla el anterior en algunos móviles
+                        st.download_button(
+                            label="💾 Descargar copia",
+                            data=blob,
+                            file_name=row['nombre_archivo'],
+                            mime="application/pdf",
+                            key=f"dl_{row['id']}"
+                        )
         else:
-            st.error(f"No se encontró la referencia '{query}'.")
+            st.error(f"No se encontraron documentos con la referencia '{query}'.")
