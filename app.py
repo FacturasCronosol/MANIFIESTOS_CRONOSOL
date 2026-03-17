@@ -30,18 +30,15 @@ MESES_ES = {
 
 # Inicialización de la base de datos con limpieza forzada definitiva
 def init_db():
-    db_path = 'gestion_cronosol_v4.db' # Cambiamos nombre para forzar nueva creación si la anterior falló
+    db_path = 'gestion_cronosol_v4.db' 
     conn = sqlite3.connect(db_path, check_same_thread=False)
     c = conn.cursor()
     
-    # Verificación de integridad de columnas
     try:
         c.execute("SELECT fecha_iso FROM documentos LIMIT 1")
     except sqlite3.OperationalError:
-        # Si la columna no existe, borramos la tabla conflictiva
         c.execute("DROP TABLE IF EXISTS documentos")
     
-    # Crear la tabla con la estructura completa de 9 columnas
     c.execute('''CREATE TABLE IF NOT EXISTS documentos 
                  (id TEXT PRIMARY KEY, tipo TEXT, numero TEXT, fecha_iso TEXT, 
                   proveedor TEXT, contenido TEXT, nombre_archivo TEXT, pdf_blob BLOB, paginas_json TEXT)''')
@@ -51,8 +48,29 @@ def init_db():
 
 conn, c = init_db()
 
+def resaltar_pdf(pdf_bytes, query):
+    """Resalta físicamente el texto en el PDF usando PyMuPDF"""
+    if not query:
+        return pdf_bytes
+    
+    try:
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        for page in doc:
+            text_instances = page.search_for(query)
+            for inst in text_instances:
+                # Añadir un resaltado (highlight) amarillo
+                annot = page.add_highlight_annot(inst)
+                annot.update()
+        
+        # Guardar el PDF con los cambios en memoria
+        output_bytes = doc.write()
+        doc.close()
+        return output_bytes
+    except Exception as e:
+        st.error(f"Error al resaltar: {e}")
+        return pdf_bytes
+
 def formatear_fecha_visual(fecha_iso):
-    """Convierte YYYY-MM-DD a DD/mes/YYYY"""
     try:
         dt = datetime.strptime(fecha_iso, "%Y-%m-%d")
         return f"{dt.day}/{MESES_ES[dt.month]}/{dt.year}"
@@ -60,50 +78,38 @@ def formatear_fecha_visual(fecha_iso):
         return fecha_iso
 
 def normalizar_fecha_a_iso(texto_fecha):
-    """Convierte cualquier formato de fecha a YYYY-MM-DD"""
     if not texto_fecha:
         return datetime.now().strftime("%Y-%m-%d")
-        
     texto_fecha = texto_fecha.upper().replace("DE ", "").replace(".", "").replace(",", "").strip()
-    
     m1 = re.search(r'(\d{1,2})[/-](\d{1,2})[/-](\d{4})', texto_fecha)
     if m1:
         d, m, y = m1.groups()
         try: return f"{int(y):04d}-{int(m):02d}-{int(d):02d}"
         except: pass
-    
     m2 = re.search(r'(\d{4})[/-](\d{1,2})[/-](\d{1,2})', texto_fecha)
     if m2:
         y, m, d = m2.groups()
         try: return f"{int(y):04d}-{int(m):02d}-{int(d):02d}"
         except: pass
-    
     if re.match(r'^\d{4}-\d{2}-\d{2}$', texto_fecha):
         return texto_fecha
-
     return datetime.now().strftime("%Y-%m-%d")
 
 def extraer_fecha_texto(texto):
-    """Extrae fechas potenciales del contenido del PDF"""
     prioridades = [r'FECHA EMISION', r'FECHA DE EMISIÓN', r'FECHA DE FACTURA', r'FECHA:']
     for p in prioridades:
         match = re.search(f'{p}.*?(\\d{{1,2}}[/-]\\d{{1,2}}[/-]\\d{{4}})', texto, re.IGNORECASE | re.DOTALL)
         if match:
             return normalizar_fecha_a_iso(match.group(1))
-
     formatos = [r'(\d{1,2}[/-]\d{1,2}[/-]\d{4})', r'(\d{4}[/-]\d{1,2}[/-]\d{1,2})']
     for fmt in formatos:
         match = re.search(fmt, texto)
         if match:
             return normalizar_fecha_a_iso(match.group(1))
-            
     return datetime.now().strftime("%Y-%m-%d")
 
-def abrir_pdf_js(bin_file, page_num=1, search_text=""):
+def abrir_pdf_js(bin_file, page_num=1):
     base64_pdf = base64.b64encode(bin_file).decode('utf-8')
-    # Limpiamos el texto de búsqueda para evitar problemas con comillas
-    search_query = search_text.replace('"', '').replace("'", "")
-    
     js = f"""
     <script>
     function openPDF() {{
@@ -115,16 +121,13 @@ def abrir_pdf_js(bin_file, page_num=1, search_text=""):
         const byteArray = new Uint8Array(byteNumbers);
         const file = new Blob([byteArray], {{type: 'application/pdf'}});
         const fileURL = URL.createObjectURL(file);
-        
-        // El parámetro #search= permite resaltar texto en la mayoría de visores modernos (Chrome, Edge)
-        const highlightParam = "{search_query}" ? "&search=" + encodeURIComponent("{search_query}") : "";
-        window.open(fileURL + '#page={page_num}' + highlightParam, '_blank');
+        window.open(fileURL + '#page={page_num}', '_blank');
     }}
     </script>
     <button onclick="openPDF()" style="
         width: 100%; padding: 0.75em 1.5em; background-color: #28a745; color: white;
         border: none; border-radius: 8px; font-weight: bold; cursor: pointer;
-    ">📄 Ver PDF (Pág. {page_num})</button>
+    ">📄 Ver PDF Resaltado (Pág. {page_num})</button>
     """
     return js
 
@@ -226,10 +229,13 @@ elif choice == "🔍 Buscador":
                                 st.info("Referencia encontrada en el contenido general.")
                         with col_b:
                             p_dest = encontrado[0] if encontrado else 1
-                            # Pasamos el query a la función de apertura para que resalte el texto
-                            st.components.v1.html(abrir_pdf_js(blob, p_dest, query), height=70)
-                            st.download_button("💾 Bajar PDF", blob, nombre, "application/pdf", key=f"d_{doc_id}")
+                            
+                            # NUEVA LÓGICA: Resaltar físicamente el PDF antes de mostrarlo
+                            pdf_resaltado = resaltar_pdf(blob, query)
+                            
+                            st.components.v1.html(abrir_pdf_js(pdf_resaltado, p_dest), height=70)
+                            st.download_button("💾 Bajar PDF", pdf_resaltado, f"RESALTADO_{nombre}", "application/pdf", key=f"d_{doc_id}")
             else:
                 st.error("No se encontraron resultados.")
         except sqlite3.OperationalError as e:
-            st.error(f"Error técnico de base de datos: {e}. Por favor, recarga la página para aplicar cambios de esquema.")
+            st.error(f"Error técnico de base de datos: {e}.")
