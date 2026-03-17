@@ -30,6 +30,16 @@ def mostrar_pdf(bin_file):
     # AQUÍ ESTABA EL ERROR: Cambia unsafe_allow_stdio por unsafe_allow_html
     st.markdown(pdf_display, unsafe_allow_html=True)
 
+with col_a:
+                # ... (tus códigos actuales de texto) ...
+                # Añade esto al final del bloque with col_a:
+                st.download_button(
+                    label="📥 Descargar PDF para imprimir/ver",
+                    data=blob,
+                    file_name=doc_data['nombre_archivo'],
+                    mime="application/pdf"
+                )
+
 # --- MENÚ LATERAL ---
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/7542/7542670.png", width=100)
