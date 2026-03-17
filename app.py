@@ -6,6 +6,7 @@ import hashlib
 import base64
 import json
 import re
+import os
 from datetime import datetime
 
 # Configuración profesional
@@ -28,31 +29,31 @@ MESES_ES = {
     7: "jul", 8: "ago", 9: "sep", 10: "oct", 11: "nov", 12: "dic"
 }
 
-# Inicialización de la base de datos con corrección forzada de esquema
+# Inicialización de la base de datos con limpieza forzada para evitar errores de esquema
 def init_db():
-    conn = sqlite3.connect('gestion_cronosol.db', check_same_thread=False)
+    db_path = 'gestion_cronosol.db'
+    conn = sqlite3.connect(db_path, check_same_thread=False)
     c = conn.cursor()
     
-    # Crear tabla si no existe
+    # Verificar si la tabla existe y cuántas columnas tiene
+    c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='documentos'")
+    table_exists = c.fetchone()
+    
+    if table_exists:
+        c.execute("PRAGMA table_info(documentos)")
+        num_cols = len(c.fetchall())
+        # Si no tiene las 9 columnas necesarias, borramos y empezamos de nuevo
+        if num_cols < 9:
+            conn.close()
+            if os.path.exists(db_path):
+                os.remove(db_path)
+            conn = sqlite3.connect(db_path, check_same_thread=False)
+            c = conn.cursor()
+
+    # Crear la tabla con la estructura final de 9 columnas
     c.execute('''CREATE TABLE IF NOT EXISTS documentos 
                  (id TEXT PRIMARY KEY, tipo TEXT, numero TEXT, fecha_iso TEXT, 
                   proveedor TEXT, contenido TEXT, nombre_archivo TEXT, pdf_blob BLOB, paginas_json TEXT)''')
-    
-    # Verificar número de columnas actual
-    c.execute("PRAGMA table_info(documentos)")
-    columns = c.fetchall()
-    
-    # Si la tabla tiene menos de 9 columnas, aplicamos la corrección forzada
-    if len(columns) < 9:
-        try:
-            # Intentamos añadir la columna faltante
-            c.execute("ALTER TABLE documentos ADD COLUMN paginas_json TEXT")
-        except:
-            # Si falla el ALTER, recreamos la tabla (Solución radical al error de la imagen)
-            c.execute("ALTER TABLE documentos RENAME TO documentos_old")
-            c.execute('''CREATE TABLE documentos 
-                         (id TEXT PRIMARY KEY, tipo TEXT, numero TEXT, fecha_iso TEXT, 
-                          proveedor TEXT, contenido TEXT, nombre_archivo TEXT, pdf_blob BLOB, paginas_json TEXT)''')
     
     conn.commit()
     return conn, c
@@ -138,7 +139,7 @@ with st.sidebar:
     st.title("🛡️ Cronosol")
     choice = st.radio("Menú", ["🔍 Buscador", "📤 Carga Masiva"])
     st.divider()
-    st.info("Orden cronológico (Nuevo → Viejo).")
+    st.info("Orden cronológico activado.")
 
 if choice == "📤 Carga Masiva":
     st.header("Carga Masiva de Documentos")
@@ -185,7 +186,7 @@ if choice == "📤 Carga Masiva":
                             texto_full += t + " "
                             dict_pags[p_idx+1] = t
                     try:
-                        # INSERT específico para asegurar compatibilidad
+                        # INSERT específico por nombre de columna
                         c.execute("""INSERT INTO documentos 
                                    (id, tipo, numero, fecha_iso, proveedor, contenido, nombre_archivo, pdf_blob, paginas_json) 
                                    VALUES (?,?,?,?,?,?,?,?,?)""", 
@@ -193,9 +194,9 @@ if choice == "📤 Carga Masiva":
                                   "GENERAL", texto_full, doc['nombre'], doc['blob'], json.dumps(dict_pags)))
                         conn.commit()
                     except sqlite3.IntegrityError:
-                        pass # Ya existe este documento
+                        pass # Documento ya existe
                     except Exception as e:
-                        st.error(f"Error procesando {doc['nombre']}: {e}")
+                        st.error(f"Error en {doc['nombre']}: {e}")
                     bar.progress((idx + 1) / len(documentos_finales))
                 st.success("¡Documentos indexados correctamente!")
                 st.session_state.pendientes = []
@@ -218,7 +219,6 @@ elif choice == "🔍 Buscador":
                 emoji = "🟢" if tipo == "Factura de Compra" else "🔵"
                 fecha_vis = formatear_fecha_visual(fecha_iso)
                 
-                # Formato solicitado: EMOJI FECHA | TIPO - NOMBRE
                 with st.expander(f"{emoji} {fecha_vis} | {tipo} - {nombre}"):
                     encontrado = []
                     if pags:
@@ -228,12 +228,12 @@ elif choice == "🔍 Buscador":
                     col_i, col_b = st.columns([2, 1])
                     with col_i:
                         if encontrado:
-                            st.markdown(f'<div class="highlight-page">📍 Encontrado en página(s): {", ".join(map(str, encontrado))}</div>', unsafe_allow_html=True)
+                            st.markdown(f'<div class="highlight-page">📍 Página(s): {", ".join(map(str, encontrado))}</div>', unsafe_allow_html=True)
                         else:
-                            st.info("Referencia encontrada en el contenido general del documento.")
+                            st.info("Referencia encontrada en el contenido general.")
                     with col_b:
                         p_dest = encontrado[0] if encontrado else 1
                         st.components.v1.html(abrir_pdf_js(blob, p_dest), height=70)
-                        st.download_button("💾 Descargar", blob, nombre, "application/pdf", key=f"d_{doc_id}")
+                        st.download_button("💾 Bajar PDF", blob, nombre, "application/pdf", key=f"d_{doc_id}")
         else:
-            st.error("No se encontraron documentos con esa referencia.")
+            st.error("No se encontraron resultados.")
