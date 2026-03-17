@@ -10,7 +10,7 @@ import os
 from datetime import datetime
 
 # Configuración profesional
-st.set_page_config(page_title="CRONOSOL - DIAN", layout="wide", page_icon="https://drive.google.com/file/d/1Q7StetNrzbkMmAOUifHderoCuI3amPjt/view")
+st.set_page_config(page_title="CRONOSOL - DIAN", layout="wide", page_icon="https://effi.com.co/public/images/app/empresas/2669785618790903_3825617455082073354.jpg")
 
 # Estilo personalizado
 st.markdown("""
