@@ -49,26 +49,45 @@ def formatear_fecha_visual(fecha_iso):
         return fecha_iso
 
 def normalizar_fecha_a_iso(texto_fecha):
-    """Intenta convertir cualquier basura de fecha a YYYY-MM-DD para la DB"""
-    # Limpiar texto
-    texto_fecha = texto_fecha.upper().replace("DE ", "").replace(".", "").strip()
+    """Convierte cualquier formato de fecha a YYYY-MM-DD para ordenamiento correcto"""
+    if not texto_fecha:
+        return datetime.now().strftime("%Y-%m-%d")
+        
+    texto_fecha = texto_fecha.upper().replace("DE ", "").replace(".", "").replace(",", "").strip()
     
-    # Patrón 1: DD/MM/YYYY o DD-MM-YYYY
+    # Intentar DD/MM/YYYY o DD-MM-YYYY
     m1 = re.search(r'(\d{1,2})[/-](\d{1,2})[/-](\d{4})', texto_fecha)
     if m1:
         d, m, y = m1.groups()
-        return f"{int(y):04d}-{int(m):02d}-{int(d):02d}"
+        try:
+            return f"{int(y):04d}-{int(m):02d}-{int(d):02d}"
+        except: pass
     
-    # Patrón 2: YYYY/MM/DD
+    # Intentar YYYY/MM/DD o YYYY-MM-DD
     m2 = re.search(r'(\d{4})[/-](\d{1,2})[/-](\d{1,2})', texto_fecha)
     if m2:
         y, m, d = m2.groups()
-        return f"{int(y):04d}-{int(m):02d}-{int(d):02d}"
+        try:
+            return f"{int(y):04d}-{int(m):02d}-{int(d):02d}"
+        except: pass
     
+    # Si ya viene en formato ISO YYYY-MM-DD (por ejemplo del input corregido)
+    m3 = re.search(r'(\d{4})-(\d{2})-(\d{2})', texto_fecha)
+    if m3:
+        return texto_fecha
+
     return datetime.now().strftime("%Y-%m-%d")
 
 def extraer_fecha_texto(texto):
-    """Busca patrones de fecha en el texto del PDF"""
+    """Busca patrones de fecha en el texto del PDF con mayor precisión"""
+    # Buscamos primero cerca de palabras clave para evitar capturar fechas de vencimiento u otras
+    prioridades = [r'FECHA EMISION', r'FECHA DE EMISIÓN', r'FECHA DE FACTURA', r'FECHA:']
+    for p in prioridades:
+        match = re.search(f'{p}.*?(\\d{{1,2}}[/-]\\d{{1,2}}[/-]\\d{{4}})', texto, re.IGNORECASE | re.DOTALL)
+        if match:
+            return normalizar_fecha_a_iso(match.group(1))
+
+    # Búsqueda general si falla lo anterior
     formatos = [
         r'(\d{1,2}[/-]\d{1,2}[/-]\d{4})', 
         r'(\d{4}[/-]\d{1,2}[/-]\d{1,2})'
@@ -77,6 +96,7 @@ def extraer_fecha_texto(texto):
         match = re.search(fmt, texto)
         if match:
             return normalizar_fecha_a_iso(match.group(1))
+            
     return datetime.now().strftime("%Y-%m-%d")
 
 def abrir_pdf_js(bin_file, page_num=1):
@@ -107,7 +127,7 @@ with st.sidebar:
     st.title("🛡️ Cronosol")
     choice = st.radio("Menú", ["🔍 Buscador", "📤 Carga Masiva"])
     st.divider()
-    st.info("Sistema ordenado por fecha (Nuevo → Viejo)")
+    st.info("Orden cronológico: Más reciente arriba.")
 
 if choice == "📤 Carga Masiva":
     st.header("Carga Masiva de Documentos")
@@ -118,32 +138,35 @@ if choice == "📤 Carga Masiva":
         if st.button("⚡ Analizar Documentos"):
             st.session_state.pendientes = []
             for f in archivos:
+                f.seek(0)
                 pdf_bytes = f.read()
                 doc_id = hashlib.sha256(pdf_bytes).hexdigest()
                 with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
-                    fecha_iso = extraer_fecha_texto(doc[0].get_text())
-                    st.session_state.pendientes.append({
-                        "id": doc_id, "nombre": f.name, "tipo": tipo_doc,
-                        "fecha_iso": fecha_iso, "blob": pdf_bytes
-                    })
+                    if len(doc) > 0:
+                        fecha_iso = extraer_fecha_texto(doc[0].get_text())
+                        st.session_state.pendientes.append({
+                            "id": doc_id, "nombre": f.name, "tipo": tipo_doc,
+                            "fecha_iso": fecha_iso, "blob": pdf_bytes
+                        })
 
         if 'pendientes' in st.session_state and st.session_state.pendientes:
             st.subheader("📋 Revisión de Fechas")
+            st.caption("Ajuste la fecha si la detección automática no fue precisa.")
             documentos_finales = []
             for i, d in enumerate(st.session_state.pendientes):
                 with st.container():
                     st.markdown('<div class="upload-card">', unsafe_allow_html=True)
                     col1, col2 = st.columns([1, 2])
                     with col1:
-                        # Input de texto para la fecha, pero lo normalizamos al salir
-                        f_input = st.text_input(f"Fecha (ISO: {d['fecha_iso']})", value=d['fecha_iso'], key=f"f_{i}")
+                        f_input = st.text_input(f"Fecha Detectada (Año-Mes-Día)", value=d['fecha_iso'], key=f"f_{i}")
                     with col2:
                         st.write(f"📄 **{d['nombre']}**")
                     documentos_finales.append({**d, "fecha_iso": normalizar_fecha_a_iso(f_input)})
                     st.markdown('</div>', unsafe_allow_html=True)
 
-            if st.button("🚀 Guardar Todo"):
-                for doc in documentos_finales:
+            if st.button("🚀 Guardar Todo en Base de Datos"):
+                bar = st.progress(0)
+                for idx, doc in enumerate(documentos_finales):
                     texto_full = ""
                     dict_pags = {}
                     with fitz.open(stream=doc['blob'], filetype="pdf") as pdf:
@@ -157,23 +180,26 @@ if choice == "📤 Carga Masiva":
                                   "GENERAL", texto_full, doc['nombre'], doc['blob'], json.dumps(dict_pags)))
                         conn.commit()
                     except: pass
-                st.success("¡Indexado completo!")
+                    bar.progress((idx + 1) / len(documentos_finales))
+                st.success("¡Documentos guardados y ordenados!")
                 st.session_state.pendientes = []
                 st.rerun()
 
 elif choice == "🔍 Buscador":
     st.header("Buscador de Trazabilidad")
-    query = st.text_input("Ingrese Referencia").upper()
+    query = st.text_input("Ingrese Referencia o Palabra Clave").upper()
 
     if query:
-        # Ordenamos por fecha_iso descendente
+        # Ordenamos por fecha_iso DESC para que lo más nuevo salga primero
         c.execute("SELECT id, tipo, numero, fecha_iso, nombre_archivo, paginas_json, pdf_blob FROM documentos WHERE contenido LIKE ? ORDER BY fecha_iso DESC", (f'%{query}%',))
         res = c.fetchall()
         
         if res:
-            st.write(f"Encontrados: **{len(res)}**")
+            st.write(f"Resultados encontrados: **{len(res)}**")
             for r in res:
                 doc_id, tipo, num, fecha_iso, nombre, pags, blob = r
+                
+                # Definición de Emoji y Formato según tu solicitud
                 emoji = "🟢" if tipo == "Factura de Compra" else "🔵"
                 fecha_vis = formatear_fecha_visual(fecha_iso)
                 
@@ -188,9 +214,10 @@ elif choice == "🔍 Buscador":
                     with col_i:
                         if encontrado:
                             st.markdown(f'<div class="highlight-page">📍 Encontrado en página(s): {", ".join(map(str, encontrado))}</div>', unsafe_allow_html=True)
+                        st.write(f"Nombre de archivo: `{nombre}`")
                     with col_b:
                         p_dest = encontrado[0] if encontrado else 1
                         st.components.v1.html(abrir_pdf_js(blob, p_dest), height=70)
-                        st.download_button("💾 Bajar", blob, nombre, "application/pdf", key=f"d_{doc_id}")
+                        st.download_button("💾 Descargar PDF", blob, nombre, "application/pdf", key=f"d_{doc_id}")
         else:
-            st.error("No se encontraron resultados.")
+            st.error("No se encontraron resultados para esta búsqueda.")
