@@ -4,41 +4,32 @@ import pandas as pd
 import sqlite3
 import hashlib
 import base64
+import json
 
-# Configuración profesional para visualización en PC y Móvil
+# Configuración profesional
 st.set_page_config(page_title="Gestión Cronosol - DIAN", layout="wide", page_icon="🛡️")
 
-# Estilo personalizado para botones y optimización de UI
+# Estilo personalizado
 st.markdown("""
     <style>
-    .stButton>button { 
-        width: 100%; 
-        border-radius: 8px; 
-        height: 3.5em; 
-        background-color: #007bff; 
-        color: white; 
-        font-weight: bold;
-    }
-    /* Estilo para el botón de apertura de PDF */
-    .stDownloadButton>button {
-        background-color: #28a745 !important;
-        color: white !important;
-    }
+    .stButton>button { width: 100%; border-radius: 8px; height: 3.5em; background-color: #007bff; color: white; font-weight: bold; }
+    .stDownloadButton>button { background-color: #28a745 !important; color: white !important; }
+    .highlight-page { background-color: #fff3cd; padding: 5px; border-radius: 5px; border-left: 5px solid #ffc107; font-weight: bold; margin-bottom: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
 # Inicialización de la base de datos
 conn = sqlite3.connect('gestion_cronosol.db', check_same_thread=False)
 c = conn.cursor()
+# Añadimos la columna 'paginas_json' para guardar el texto por página
 c.execute('''CREATE TABLE IF NOT EXISTS documentos 
              (id TEXT PRIMARY KEY, tipo TEXT, numero TEXT, fecha TEXT, 
-              proveedor TEXT, contenido TEXT, nombre_archivo TEXT, pdf_blob BLOB)''')
+              proveedor TEXT, contenido TEXT, nombre_archivo TEXT, pdf_blob BLOB, paginas_json TEXT)''')
 conn.commit()
 
-# Función para abrir PDF en pestaña nueva usando JavaScript (Solución definitiva a pestaña vacía)
-def abrir_pdf_js(bin_file, file_name):
+def abrir_pdf_js(bin_file, page_num=1):
     base64_pdf = base64.b64encode(bin_file).decode('utf-8')
-    # Script para crear un Blob en el cliente y abrirlo sin restricciones de data-url
+    # Script mejorado para abrir en una página específica si el visor del navegador lo soporta
     js = f"""
     <script>
     function openPDF() {{
@@ -50,46 +41,39 @@ def abrir_pdf_js(bin_file, file_name):
         const byteArray = new Uint8Array(byteNumbers);
         const file = new Blob([byteArray], {{type: 'application/pdf'}});
         const fileURL = URL.createObjectURL(file);
-        window.open(fileURL, '_blank');
+        // Intentamos pasar el parámetro de página al visor nativo (#page=X)
+        window.open(fileURL + '#page={page_num}', '_blank');
     }}
     </script>
     <button onclick="openPDF()" style="
-        width: 100%;
-        padding: 0.75em 1.5em;
-        background-color: #28a745;
-        color: white;
-        border: none;
-        border-radius: 8px;
-        font-weight: bold;
-        cursor: pointer;
-        margin-top: 10px;
-        margin-bottom: 10px;
-    ">📄 Visualizar PDF (Pestaña Nueva)</button>
+        width: 100%; padding: 0.75em 1.5em; background-color: #28a745; color: white;
+        border: none; border-radius: 8px; font-weight: bold; cursor: pointer;
+    ">📄 Visualizar PDF (Página {page_num})</button>
     """
     return js
 
 # --- MENÚ LATERAL ---
 with st.sidebar:
     st.title("🛡️ Cronosol")
-    choice = st.radio("Menú de Operaciones", ["🔍 Buscador Rápido", "📤 Cargar Documentos"])
+    choice = st.radio("Operaciones", ["🔍 Buscador Rápido", "📤 Cargar Documentos"])
     st.divider()
-    st.info("Utilice el buscador para localizar referencias en facturas y manifiestos de aduana.")
+    st.info("Sistema de localización de referencias por página para inspecciones DIAN.")
 
 # --- MÓDULO DE CARGA ---
 if choice == "📤 Cargar Documentos":
-    st.header("Registro de Nuevos Documentos")
+    st.header("Registro de Documentos con Indexación por Página")
     
     with st.form("form_carga", clear_on_submit=True):
         col1, col2 = st.columns(2)
         with col1:
-            tipo = st.selectbox("Tipo de Documento", ["Factura de Compra", "Manifiesto de Aduana"])
-            numero = st.text_input("Número del Documento (ID)")
+            tipo = st.selectbox("Documento", ["Factura de Compra", "Manifiesto de Aduana"])
+            numero = st.text_input("Número del Documento")
         with col2:
-            proveedor = st.text_input("Proveedor / Importador")
-            fecha = st.date_input("Fecha de Emisión")
+            proveedor = st.text_input("Proveedor")
+            fecha = st.date_input("Fecha")
             
-        archivo = st.file_uploader("Subir archivo PDF", type="pdf")
-        submit = st.form_submit_button("Guardar en Base de Datos")
+        archivo = st.file_uploader("Subir PDF", type="pdf")
+        submit = st.form_submit_button("Guardar y Analizar")
 
         if submit:
             if archivo and numero and proveedor:
@@ -98,55 +82,58 @@ if choice == "📤 Cargar Documentos":
                 
                 c.execute("SELECT numero FROM documentos WHERE id=?", (doc_id,))
                 if c.fetchone():
-                    st.error("⚠️ Este documento ya existe en el sistema.")
+                    st.error("⚠️ Este documento ya existe.")
                 else:
-                    with st.spinner("Indexando contenido..."):
-                        texto = ""
+                    with st.spinner("Analizando páginas..."):
+                        texto_completo = ""
+                        dict_paginas = {}
                         with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
-                            for pagina in doc:
-                                texto += pagina.get_text()
+                            for i, pagina in enumerate(doc):
+                                p_texto = pagina.get_text().upper()
+                                texto_completo += p_texto + " "
+                                dict_paginas[i+1] = p_texto # Guardamos texto por número de página
                         
-                        c.execute("INSERT INTO documentos VALUES (?,?,?,?,?,?,?,?)", 
-                                  (doc_id, tipo, numero, str(fecha), proveedor.upper(), texto.upper(), archivo.name, pdf_bytes))
+                        c.execute("INSERT INTO documentos VALUES (?,?,?,?,?,?,?,?,?)", 
+                                  (doc_id, tipo, numero, str(fecha), proveedor.upper(), 
+                                   texto_completo, archivo.name, pdf_bytes, json.dumps(dict_paginas)))
                         conn.commit()
-                        st.success(f"✅ {tipo} guardado con éxito.")
+                        st.success(f"✅ Guardado. {len(dict_paginas)} páginas indexadas.")
             else:
-                st.warning("Por favor complete todos los campos obligatorios.")
+                st.warning("Complete todos los campos.")
 
 # --- MÓDULO DE BÚSQUEDA ---
 elif choice == "🔍 Buscador Rápido":
-    st.header("Consulta de Trazabilidad")
-    query = st.text_input("Ingrese Referencia o Palabra Clave").upper()
+    st.header("Localizador de Referencias")
+    query = st.text_input("Referencia a buscar").upper()
 
     if query:
-        # Búsqueda global
-        df = pd.read_sql_query(f"SELECT id, tipo, numero, fecha, proveedor, nombre_archivo FROM documentos WHERE contenido LIKE '%{query}%' ORDER BY fecha DESC", conn)
+        # Buscamos documentos que contengan la palabra
+        c.execute("SELECT id, tipo, numero, fecha, proveedor, nombre_archivo, paginas_json, pdf_blob FROM documentos WHERE contenido LIKE ?", (f'%{query}%',))
+        resultados = c.fetchall()
         
-        if not df.empty:
-            st.write(f"Se encontraron **{len(df)}** registros para: `{query}`")
-            
-            for index, row in df.iterrows():
-                with st.expander(f"📌 {row['tipo']}: {row['numero']} - {row['proveedor']}"):
-                    col_info, col_btn = st.columns([2, 1])
+        if resultados:
+            st.write(f"Resultados para: `{query}`")
+            for res in resultados:
+                doc_id, tipo, num, fecha, prov, nombre, paginas_json, blob = res
+                
+                with st.expander(f"📌 {tipo}: {num} - {prov}"):
+                    # Analizar en qué páginas está
+                    paginas_dict = json.loads(paginas_json)
+                    encontrado_en = [p for p, contenido in paginas_dict.items() if query in contenido]
                     
+                    col_info, col_btn = st.columns([2, 1])
                     with col_info:
-                        st.write(f"**Fecha:** {row['fecha']}")
-                        st.write(f"**Archivo Original:** {row['nombre_archivo']}")
+                        st.write(f"**Fecha:** {fecha}")
+                        if encontrado_en:
+                            st.markdown(f'<div class="highlight-page">📍 Encontrado en página(s): {", ".join(encontrado_en)}</div>', unsafe_allow_html=True)
+                        else:
+                            st.write("*(Referencia encontrada en metadatos o texto general)*")
                     
                     with col_btn:
-                        c.execute("SELECT pdf_blob FROM documentos WHERE id=?", (row['id'],))
-                        blob = c.fetchone()[0]
+                        # Si se encontró en una página específica, intentamos abrir esa por defecto
+                        pag_destino = encontrado_en[0] if encontrado_en else 1
+                        st.components.v1.html(abrir_pdf_js(blob, pag_destino), height=70)
                         
-                        # Botón con JavaScript para apertura limpia en pestaña nueva
-                        st.components.v1.html(abrir_pdf_js(blob, row['nombre_archivo']), height=70)
-                        
-                        # Botón de descarga física (siempre necesario como respaldo)
-                        st.download_button(
-                            label="💾 Descargar copia local",
-                            data=blob,
-                            file_name=row['nombre_archivo'],
-                            mime="application/pdf",
-                            key=f"dl_{row['id']}"
-                        )
+                        st.download_button(label="💾 Bajar PDF", data=blob, file_name=nombre, mime="application/pdf", key=f"dl_{doc_id}")
         else:
-            st.error(f"No se encontraron documentos con la referencia '{query}'.")
+            st.error(f"No se encontró la referencia '{query}'.")
