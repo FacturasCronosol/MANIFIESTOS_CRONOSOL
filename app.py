@@ -37,17 +37,28 @@ def init_db():
 
 conn, c = init_db()
 
-# Extracción simplificada enfocada en FECHA con manejo de errores
-def extraer_fecha_y_limpiar(texto):
-    try:
-        # Buscar fecha (DD/MM/AAAA o AAAA/MM/DD)
-        match_fecha = re.search(r'(\d{1,2}[/-]\d{1,2}[/-]\d{4}|\d{4}[/-]\d{1,2}[/-]\d{1,2})', texto)
-        if match_fecha:
-            return match_fecha.group(1)
-    except Exception:
-        pass
+# Lógica de extracción REFORZADA para la FECHA
+def extraer_fecha_mejorada(texto):
+    # Intentar varios formatos de fecha comunes
+    formatos = [
+        r'(\d{1,2}[/-]\d{1,2}[/-]\d{4})',              # DD/MM/AAAA o DD-MM-AAAA
+        r'(\d{4}[/-]\d{1,2}[/-]\d{1,2})',              # AAAA/MM/DD
+        r'(\d{1,2}\s+DE\s+[A-Z]+\s+DE\s+\d{4})'       # 15 DE ENERO DE 2024
+    ]
     
-    # Si falla o no encuentra, devuelve la fecha de hoy por defecto
+    # Buscar específicamente cerca de etiquetas de fecha primero
+    etiquetas = [r'FECHA EMISION', r'FECHA DE EMISIÓN', r'FECHA GENERACION', r'FECHA']
+    for etiqueta in etiquetas:
+        match = re.search(f'{etiqueta}.*?(\\d{{1,2}}[/-]\\d{{1,2}}[/-]\\d{{4}})', texto, re.IGNORECASE | re.DOTALL)
+        if match:
+            return match.group(1)
+
+    # Si no encuentra cerca de etiquetas, buscar cualquier fecha en el texto
+    for fmt in formatos:
+        match = re.search(fmt, texto, re.IGNORECASE)
+        if match:
+            return match.group(1)
+            
     return datetime.now().strftime("%d/%m/%Y")
 
 def abrir_pdf_js(bin_file, page_num=1):
@@ -78,19 +89,19 @@ with st.sidebar:
     st.title("🛡️ Cronosol")
     choice = st.radio("Operaciones", ["🔍 Buscador Rápido", "📤 Cargar Documentos"])
     st.divider()
-    st.info("Sistema de Auditoría y Trazabilidad DIAN.")
+    st.info("Prioridad: Fecha de Documento.")
 
 if choice == "📤 Cargar Documentos":
     st.header("Carga Masiva de Documentos")
     tipo_doc = st.radio("Tipo de archivos:", ["Factura de Compra", "Manifiesto de Aduana"], horizontal=True)
     
-    archivos = st.file_uploader(f"Seleccione o arrastre archivos PDF", type="pdf", accept_multiple_files=True)
+    archivos = st.file_uploader(f"Seleccione archivos PDF", type="pdf", accept_multiple_files=True)
 
     if archivos:
-        if st.button("⚡ Analizar y Preparar Carga"):
+        if st.button("⚡ Analizar Fechas"):
             st.session_state.pendientes = []
             
-            with st.spinner("Analizando documentos..."):
+            with st.spinner("Buscando fechas en los documentos..."):
                 for f in archivos:
                     try:
                         f.seek(0)
@@ -99,10 +110,11 @@ if choice == "📤 Cargar Documentos":
                         
                         with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
                             if len(doc) > 0:
-                                texto_meta = doc[0].get_text()
-                                fecha_sug = extraer_fecha_y_limpiar(texto_meta)
+                                # Analizamos la primera página para la fecha
+                                texto_meta = doc[0].get_text().upper()
+                                fecha_sug = extraer_fecha_mejorada(texto_meta)
                                 
-                                # Nombre del archivo limpio
+                                # Usamos el nombre del archivo para los otros campos (opcional)
                                 nombre_base = f.name.replace(".pdf", "").replace(".PDF", "")
                                 
                                 st.session_state.pendientes.append({
@@ -110,7 +122,7 @@ if choice == "📤 Cargar Documentos":
                                     "nombre": f.name, 
                                     "tipo": tipo_doc,
                                     "numero": nombre_base,
-                                    "proveedor": "POR DEFINIR", 
+                                    "proveedor": "GENERAL", 
                                     "fecha": fecha_sug, 
                                     "blob": pdf_bytes
                                 })
@@ -118,28 +130,26 @@ if choice == "📤 Cargar Documentos":
                         st.error(f"Error procesando {f.name}: {e}")
 
         if 'pendientes' in st.session_state and st.session_state.pendientes:
-            st.subheader("📋 Verificación de Datos")
-            st.info("El sistema ha pre-llenado los datos. Ajuste si es necesario antes de guardar.")
+            st.subheader("📋 Revisión de Fechas")
+            st.warning("Verifique que la fecha sea la correcta antes de indexar.")
             
             documentos_finales = []
             for i, d in enumerate(st.session_state.pendientes):
                 with st.container():
                     st.markdown('<div class="upload-card">', unsafe_allow_html=True)
-                    c1, c2, c3 = st.columns([3, 2, 2])
-                    with c1:
+                    c_fec, c_inf = st.columns([1, 3])
+                    with c_fec:
+                        new_fec = st.text_input("Fecha Detectada", value=d['fecha'], key=f"f_{d['id']}_{i}")
+                    with c_inf:
                         st.markdown(f"📄 **Archivo:** {d['nombre']}")
-                        new_prov = st.text_input("Proveedor", value=d['proveedor'], key=f"p_{d['id']}_{i}")
-                    with c2:
-                        new_num = st.text_input("No. Documento", value=d['numero'], key=f"n_{d['id']}_{i}")
-                    with c3:
-                        new_fec = st.text_input("Fecha", value=d['fecha'], key=f"f_{d['id']}_{i}")
+                        st.caption("Número y Proveedor se guardarán según el nombre del archivo si no se editan.")
                     
-                    documentos_finales.append({**d, "numero": new_num, "proveedor": new_prov, "fecha": new_fec})
+                    # Guardamos los datos ajustados
+                    documentos_finales.append({**d, "fecha": new_fec})
                     st.markdown('</div>', unsafe_allow_html=True)
 
             if st.button("🚀 Guardar Todo"):
                 bar = st.progress(0)
-                exitosos = 0
                 for idx, doc in enumerate(documentos_finales):
                     texto_full = ""
                     dict_pags = {}
@@ -155,31 +165,30 @@ if choice == "📤 Cargar Documentos":
                                   doc['proveedor'].upper(), texto_full, doc['nombre'], 
                                   doc['blob'], json.dumps(dict_pags)))
                         conn.commit()
-                        exitosos += 1
                     except sqlite3.IntegrityError:
-                        pass # Ya existe
+                        pass 
                     except Exception as e:
                         st.error(f"Error al guardar {doc['nombre']}: {e}")
                     
                     bar.progress((idx + 1) / len(documentos_finales))
                 
-                st.success(f"✅ Se han indexado {exitosos} documentos correctamente.")
+                st.success("✅ Documentos indexados.")
                 st.session_state.pendientes = []
                 st.rerun()
 
 elif choice == "🔍 Buscador Rápido":
-    st.header("Buscador de Referencias")
-    query = st.text_input("Referencia, Factura o Manifiesto").upper()
+    st.header("Buscador de Trazabilidad")
+    query = st.text_input("Ingrese Referencia o Término de búsqueda").upper()
 
     if query:
         c.execute("SELECT id, tipo, numero, fecha, proveedor, nombre_archivo, paginas_json, pdf_blob FROM documentos WHERE contenido LIKE ?", (f'%{query}%',))
         res = c.fetchall()
         
         if res:
-            st.write(f"Coincidencias: **{len(res)}**")
+            st.write(f"Resultados: **{len(res)}**")
             for r in res:
                 doc_id, tipo, num, fecha, prov, nombre, pags, blob = r
-                with st.expander(f"📅 {fecha} | {tipo}: {num} ({prov})"):
+                with st.expander(f"📅 {fecha} | {nombre}"):
                     encontrado = []
                     if pags:
                         p_dict = json.loads(pags)
@@ -187,13 +196,12 @@ elif choice == "🔍 Buscador Rápido":
                     
                     col_i, col_b = st.columns([2, 1])
                     with col_i:
-                        st.write(f"Archivo: `{nombre}`")
                         if encontrado:
-                            st.markdown(f'<div class="highlight-page">📍 Ubicado en página(s): {", ".join(map(str, encontrado))}</div>', unsafe_allow_html=True)
+                            st.markdown(f'<div class="highlight-page">📍 Coincidencia en página(s): {", ".join(map(str, encontrado))}</div>', unsafe_allow_html=True)
                     
                     with col_b:
                         p_dest = encontrado[0] if encontrado else 1
                         st.components.v1.html(abrir_pdf_js(blob, p_dest), height=70)
-                        st.download_button("💾 Bajar PDF", blob, nombre, "application/pdf", key=f"d_{doc_id}")
+                        st.download_button("💾 Bajar", blob, nombre, "application/pdf", key=f"d_{doc_id}")
         else:
             st.error("No se encontraron resultados.")
