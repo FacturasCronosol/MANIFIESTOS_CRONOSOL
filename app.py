@@ -28,7 +28,7 @@ MESES_ES = {
     7: "jul", 8: "ago", 9: "sep", 10: "oct", 11: "nov", 12: "dic"
 }
 
-# Inicialización de la base de datos con limpieza forzada definitiva
+# Inicialización de la base de datos
 def init_db():
     db_path = 'gestion_cronosol_v4.db' 
     conn = sqlite3.connect(db_path, check_same_thread=False)
@@ -58,11 +58,9 @@ def resaltar_pdf(pdf_bytes, query):
         for page in doc:
             text_instances = page.search_for(query)
             for inst in text_instances:
-                # Añadir un resaltado (highlight) amarillo
                 annot = page.add_highlight_annot(inst)
                 annot.update()
         
-        # Guardar el PDF con los cambios en memoria
         output_bytes = doc.write()
         doc.close()
         return output_bytes
@@ -191,8 +189,6 @@ if choice == "📤 Carga Masiva":
                         conn.commit()
                     except sqlite3.IntegrityError:
                         pass
-                    except Exception as e:
-                        st.error(f"Error en {doc['nombre']}: {e}")
                     bar.progress((idx + 1) / len(documentos_finales))
                 st.success("¡Documentos indexados correctamente!")
                 st.session_state.pendientes = []
@@ -229,13 +225,10 @@ elif choice == "🔍 Buscador":
                                 st.info("Referencia encontrada en el contenido general.")
                         with col_b:
                             p_dest = encontrado[0] if encontrado else 1
-                            
-                            # NUEVA LÓGICA: Resaltar físicamente el PDF antes de mostrarlo
                             pdf_resaltado = resaltar_pdf(blob, query)
-                            
                             st.components.v1.html(abrir_pdf_js(pdf_resaltado, p_dest), height=70)
                             st.download_button("💾 Bajar PDF", pdf_resaltado, f"RESALTADO_{nombre}", "application/pdf", key=f"d_{doc_id}")
             else:
                 st.error("No se encontraron resultados.")
         except sqlite3.OperationalError as e:
-            st.error(f"Error técnico de base de datos: {e}.")
+            st.error(f"Error técnico: {e}")
