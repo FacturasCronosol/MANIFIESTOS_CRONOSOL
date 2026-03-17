@@ -17,7 +17,7 @@ st.markdown("""
     <style>
     .stButton>button { width: 100%; border-radius: 8px; height: 3.5em; background-color: #001770; color: white; font-weight: bold; }
     .stDownloadButton>button { background-color: #28a745 !important; color: white !important; }
-    .highlight-page { background-color: #ffc107; padding: 5px; border-radius: 5px; border-left: 5px solid #fff3cd; font-weight: bold; margin-bottom: 10px; }
+    .highlight-page { background-color: #3c9df3; padding: 5px; border-radius: 5px; border-left: 5px solid #3c9df3; font-weight: bold; margin-bottom: 10px; }
     .upload-card { border: 1px solid #ddd; padding: 15px; border-radius: 10px; margin-bottom: 15px; background-color: #80e000; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
     </style>
     """, unsafe_allow_html=True)
