@@ -19,7 +19,6 @@ st.markdown("""
     .stDownloadButton>button { background-color: #28a745 !important; color: white !important; }
     .highlight-page { background-color: #fff3cd; padding: 5px; border-radius: 5px; border-left: 5px solid #ffc107; font-weight: bold; margin-bottom: 10px; }
     .upload-card { border: 1px solid #ddd; padding: 15px; border-radius: 10px; margin-bottom: 15px; background-color: #ffffff; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-    .res-header { font-size: 1.1em; font-weight: bold; margin-bottom: 5px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -29,28 +28,20 @@ MESES_ES = {
     7: "jul", 8: "ago", 9: "sep", 10: "oct", 11: "nov", 12: "dic"
 }
 
-# Inicialización de la base de datos con limpieza forzada para evitar errores de esquema
+# Inicialización de la base de datos con limpieza forzada definitiva
 def init_db():
-    db_path = 'gestion_cronosol.db'
+    db_path = 'gestion_cronosol_v4.db' # Cambiamos nombre para forzar nueva creación si la anterior falló
     conn = sqlite3.connect(db_path, check_same_thread=False)
     c = conn.cursor()
     
-    # Verificar si la tabla existe y cuántas columnas tiene
-    c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='documentos'")
-    table_exists = c.fetchone()
+    # Verificación de integridad de columnas
+    try:
+        c.execute("SELECT fecha_iso FROM documentos LIMIT 1")
+    except sqlite3.OperationalError:
+        # Si la columna no existe, borramos la tabla conflictiva
+        c.execute("DROP TABLE IF EXISTS documentos")
     
-    if table_exists:
-        c.execute("PRAGMA table_info(documentos)")
-        num_cols = len(c.fetchall())
-        # Si no tiene las 9 columnas necesarias, borramos y empezamos de nuevo
-        if num_cols < 9:
-            conn.close()
-            if os.path.exists(db_path):
-                os.remove(db_path)
-            conn = sqlite3.connect(db_path, check_same_thread=False)
-            c = conn.cursor()
-
-    # Crear la tabla con la estructura final de 9 columnas
+    # Crear la tabla con la estructura completa de 9 columnas
     c.execute('''CREATE TABLE IF NOT EXISTS documentos 
                  (id TEXT PRIMARY KEY, tipo TEXT, numero TEXT, fecha_iso TEXT, 
                   proveedor TEXT, contenido TEXT, nombre_archivo TEXT, pdf_blob BLOB, paginas_json TEXT)''')
@@ -69,34 +60,31 @@ def formatear_fecha_visual(fecha_iso):
         return fecha_iso
 
 def normalizar_fecha_a_iso(texto_fecha):
-    """Convierte cualquier formato de fecha a YYYY-MM-DD para ordenamiento correcto"""
+    """Convierte cualquier formato de fecha a YYYY-MM-DD"""
     if not texto_fecha:
         return datetime.now().strftime("%Y-%m-%d")
         
     texto_fecha = texto_fecha.upper().replace("DE ", "").replace(".", "").replace(",", "").strip()
     
-    # Patrón: DD/MM/YYYY o DD-MM-YYYY
     m1 = re.search(r'(\d{1,2})[/-](\d{1,2})[/-](\d{4})', texto_fecha)
     if m1:
         d, m, y = m1.groups()
         try: return f"{int(y):04d}-{int(m):02d}-{int(d):02d}"
         except: pass
     
-    # Patrón: YYYY/MM/DD
     m2 = re.search(r'(\d{4})[/-](\d{1,2})[/-](\d{1,2})', texto_fecha)
     if m2:
         y, m, d = m2.groups()
         try: return f"{int(y):04d}-{int(m):02d}-{int(d):02d}"
         except: pass
     
-    # Si ya es formato ISO
     if re.match(r'^\d{4}-\d{2}-\d{2}$', texto_fecha):
         return texto_fecha
 
     return datetime.now().strftime("%Y-%m-%d")
 
 def extraer_fecha_texto(texto):
-    """Busca patrones de fecha en el texto del PDF"""
+    """Extrae fechas potenciales del contenido del PDF"""
     prioridades = [r'FECHA EMISION', r'FECHA DE EMISIÓN', r'FECHA DE FACTURA', r'FECHA:']
     for p in prioridades:
         match = re.search(f'{p}.*?(\\d{{1,2}}[/-]\\d{{1,2}}[/-]\\d{{4}})', texto, re.IGNORECASE | re.DOTALL)
@@ -139,7 +127,7 @@ with st.sidebar:
     st.title("🛡️ Cronosol")
     choice = st.radio("Menú", ["🔍 Buscador", "📤 Carga Masiva"])
     st.divider()
-    st.info("Orden cronológico activado.")
+    st.info("Orden cronológico (Nuevo → Viejo).")
 
 if choice == "📤 Carga Masiva":
     st.header("Carga Masiva de Documentos")
@@ -186,7 +174,6 @@ if choice == "📤 Carga Masiva":
                             texto_full += t + " "
                             dict_pags[p_idx+1] = t
                     try:
-                        # INSERT específico por nombre de columna
                         c.execute("""INSERT INTO documentos 
                                    (id, tipo, numero, fecha_iso, proveedor, contenido, nombre_archivo, pdf_blob, paginas_json) 
                                    VALUES (?,?,?,?,?,?,?,?,?)""", 
@@ -194,7 +181,7 @@ if choice == "📤 Carga Masiva":
                                   "GENERAL", texto_full, doc['nombre'], doc['blob'], json.dumps(dict_pags)))
                         conn.commit()
                     except sqlite3.IntegrityError:
-                        pass # Documento ya existe
+                        pass
                     except Exception as e:
                         st.error(f"Error en {doc['nombre']}: {e}")
                     bar.progress((idx + 1) / len(documentos_finales))
@@ -207,33 +194,35 @@ elif choice == "🔍 Buscador":
     query = st.text_input("Ingrese Referencia, Contenedor o Palabra Clave").upper()
 
     if query:
-        # Búsqueda ordenada por fecha descendente
-        c.execute("""SELECT id, tipo, numero, fecha_iso, nombre_archivo, paginas_json, pdf_blob 
-                     FROM documentos WHERE contenido LIKE ? ORDER BY fecha_iso DESC""", (f'%{query}%',))
-        res = c.fetchall()
-        
-        if res:
-            st.write(f"Resultados encontrados: **{len(res)}**")
-            for r in res:
-                doc_id, tipo, num, fecha_iso, nombre, pags, blob = r
-                emoji = "🟢" if tipo == "Factura de Compra" else "🔵"
-                fecha_vis = formatear_fecha_visual(fecha_iso)
-                
-                with st.expander(f"{emoji} {fecha_vis} | {tipo} - {nombre}"):
-                    encontrado = []
-                    if pags:
-                        p_dict = json.loads(pags)
-                        encontrado = [p for p, cont in p_dict.items() if query in cont]
+        try:
+            c.execute("""SELECT id, tipo, numero, fecha_iso, nombre_archivo, paginas_json, pdf_blob 
+                         FROM documentos WHERE contenido LIKE ? ORDER BY fecha_iso DESC""", (f'%{query}%',))
+            res = c.fetchall()
+            
+            if res:
+                st.write(f"Resultados encontrados: **{len(res)}**")
+                for r in res:
+                    doc_id, tipo, num, fecha_iso, nombre, pags, blob = r
+                    emoji = "🟢" if tipo == "Factura de Compra" else "🔵"
+                    fecha_vis = formatear_fecha_visual(fecha_iso)
                     
-                    col_i, col_b = st.columns([2, 1])
-                    with col_i:
-                        if encontrado:
-                            st.markdown(f'<div class="highlight-page">📍 Página(s): {", ".join(map(str, encontrado))}</div>', unsafe_allow_html=True)
-                        else:
-                            st.info("Referencia encontrada en el contenido general.")
-                    with col_b:
-                        p_dest = encontrado[0] if encontrado else 1
-                        st.components.v1.html(abrir_pdf_js(blob, p_dest), height=70)
-                        st.download_button("💾 Bajar PDF", blob, nombre, "application/pdf", key=f"d_{doc_id}")
-        else:
-            st.error("No se encontraron resultados.")
+                    with st.expander(f"{emoji} {fecha_vis} | {tipo} - {nombre}"):
+                        encontrado = []
+                        if pags:
+                            p_dict = json.loads(pags)
+                            encontrado = [p for p, cont in p_dict.items() if query in cont]
+                        
+                        col_i, col_b = st.columns([2, 1])
+                        with col_i:
+                            if encontrado:
+                                st.markdown(f'<div class="highlight-page">📍 Página(s): {", ".join(map(str, encontrado))}</div>', unsafe_allow_html=True)
+                            else:
+                                st.info("Referencia encontrada en el contenido general.")
+                        with col_b:
+                            p_dest = encontrado[0] if encontrado else 1
+                            st.components.v1.html(abrir_pdf_js(blob, p_dest), height=70)
+                            st.download_button("💾 Bajar PDF", blob, nombre, "application/pdf", key=f"d_{doc_id}")
+            else:
+                st.error("No se encontraron resultados.")
+        except sqlite3.OperationalError as e:
+            st.error(f"Error técnico de base de datos: {e}. Por favor, recarga la página para aplicar cambios de esquema.")
