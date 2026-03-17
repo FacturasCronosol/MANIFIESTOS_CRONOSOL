@@ -28,20 +28,31 @@ MESES_ES = {
     7: "jul", 8: "ago", 9: "sep", 10: "oct", 11: "nov", 12: "dic"
 }
 
-# Inicialización de la base de datos mejorada para evitar errores de columnas
+# Inicialización de la base de datos con corrección forzada de esquema
 def init_db():
     conn = sqlite3.connect('gestion_cronosol.db', check_same_thread=False)
     c = conn.cursor()
-    # Crear tabla con todas las columnas necesarias si no existe
+    
+    # Crear tabla si no existe
     c.execute('''CREATE TABLE IF NOT EXISTS documentos 
                  (id TEXT PRIMARY KEY, tipo TEXT, numero TEXT, fecha_iso TEXT, 
                   proveedor TEXT, contenido TEXT, nombre_archivo TEXT, pdf_blob BLOB, paginas_json TEXT)''')
     
-    # Verificar si falta la columna paginas_json (por versiones antiguas)
+    # Verificar número de columnas actual
     c.execute("PRAGMA table_info(documentos)")
-    columns = [info[1] for info in c.fetchall()]
-    if 'paginas_json' not in columns:
-        c.execute("ALTER TABLE documentos ADD COLUMN paginas_json TEXT")
+    columns = c.fetchall()
+    
+    # Si la tabla tiene menos de 9 columnas, aplicamos la corrección forzada
+    if len(columns) < 9:
+        try:
+            # Intentamos añadir la columna faltante
+            c.execute("ALTER TABLE documentos ADD COLUMN paginas_json TEXT")
+        except:
+            # Si falla el ALTER, recreamos la tabla (Solución radical al error de la imagen)
+            c.execute("ALTER TABLE documentos RENAME TO documentos_old")
+            c.execute('''CREATE TABLE documentos 
+                         (id TEXT PRIMARY KEY, tipo TEXT, numero TEXT, fecha_iso TEXT, 
+                          proveedor TEXT, contenido TEXT, nombre_archivo TEXT, pdf_blob BLOB, paginas_json TEXT)''')
     
     conn.commit()
     return conn, c
@@ -63,21 +74,21 @@ def normalizar_fecha_a_iso(texto_fecha):
         
     texto_fecha = texto_fecha.upper().replace("DE ", "").replace(".", "").replace(",", "").strip()
     
-    # Intentar DD/MM/YYYY o DD-MM-YYYY
+    # Patrón: DD/MM/YYYY o DD-MM-YYYY
     m1 = re.search(r'(\d{1,2})[/-](\d{1,2})[/-](\d{4})', texto_fecha)
     if m1:
         d, m, y = m1.groups()
         try: return f"{int(y):04d}-{int(m):02d}-{int(d):02d}"
         except: pass
     
-    # Intentar YYYY/MM/DD
+    # Patrón: YYYY/MM/DD
     m2 = re.search(r'(\d{4})[/-](\d{1,2})[/-](\d{1,2})', texto_fecha)
     if m2:
         y, m, d = m2.groups()
         try: return f"{int(y):04d}-{int(m):02d}-{int(d):02d}"
         except: pass
     
-    # Si ya es ISO
+    # Si ya es formato ISO
     if re.match(r'^\d{4}-\d{2}-\d{2}$', texto_fecha):
         return texto_fecha
 
@@ -127,12 +138,12 @@ with st.sidebar:
     st.title("🛡️ Cronosol")
     choice = st.radio("Menú", ["🔍 Buscador", "📤 Carga Masiva"])
     st.divider()
-    st.info("Orden cronológico activado.")
+    st.info("Orden cronológico (Nuevo → Viejo).")
 
 if choice == "📤 Carga Masiva":
     st.header("Carga Masiva de Documentos")
-    tipo_doc = st.radio("Tipo:", ["Factura de Compra", "Manifiesto de Aduana"], horizontal=True)
-    archivos = st.file_uploader("Subir PDFs", type="pdf", accept_multiple_files=True)
+    tipo_doc = st.radio("Tipo de Documento:", ["Factura de Compra", "Manifiesto de Aduana"], horizontal=True)
+    archivos = st.file_uploader("Subir archivos PDF", type="pdf", accept_multiple_files=True)
 
     if archivos:
         if st.button("⚡ Analizar Documentos"):
@@ -174,7 +185,7 @@ if choice == "📤 Carga Masiva":
                             texto_full += t + " "
                             dict_pags[p_idx+1] = t
                     try:
-                        # INSERT explícito por nombre de columna para evitar el OperationalError
+                        # INSERT específico para asegurar compatibilidad
                         c.execute("""INSERT INTO documentos 
                                    (id, tipo, numero, fecha_iso, proveedor, contenido, nombre_archivo, pdf_blob, paginas_json) 
                                    VALUES (?,?,?,?,?,?,?,?,?)""", 
@@ -182,30 +193,32 @@ if choice == "📤 Carga Masiva":
                                   "GENERAL", texto_full, doc['nombre'], doc['blob'], json.dumps(dict_pags)))
                         conn.commit()
                     except sqlite3.IntegrityError:
-                        pass # Ya existe
+                        pass # Ya existe este documento
                     except Exception as e:
-                        st.error(f"Error en {doc['nombre']}: {e}")
+                        st.error(f"Error procesando {doc['nombre']}: {e}")
                     bar.progress((idx + 1) / len(documentos_finales))
-                st.success("¡Guardado correctamente!")
+                st.success("¡Documentos indexados correctamente!")
                 st.session_state.pendientes = []
                 st.rerun()
 
 elif choice == "🔍 Buscador":
     st.header("Buscador de Trazabilidad")
-    query = st.text_input("Ingrese Referencia").upper()
+    query = st.text_input("Ingrese Referencia, Contenedor o Palabra Clave").upper()
 
     if query:
+        # Búsqueda ordenada por fecha descendente
         c.execute("""SELECT id, tipo, numero, fecha_iso, nombre_archivo, paginas_json, pdf_blob 
                      FROM documentos WHERE contenido LIKE ? ORDER BY fecha_iso DESC""", (f'%{query}%',))
         res = c.fetchall()
         
         if res:
-            st.write(f"Resultados: **{len(res)}**")
+            st.write(f"Resultados encontrados: **{len(res)}**")
             for r in res:
                 doc_id, tipo, num, fecha_iso, nombre, pags, blob = r
                 emoji = "🟢" if tipo == "Factura de Compra" else "🔵"
                 fecha_vis = formatear_fecha_visual(fecha_iso)
                 
+                # Formato solicitado: EMOJI FECHA | TIPO - NOMBRE
                 with st.expander(f"{emoji} {fecha_vis} | {tipo} - {nombre}"):
                     encontrado = []
                     if pags:
@@ -215,10 +228,12 @@ elif choice == "🔍 Buscador":
                     col_i, col_b = st.columns([2, 1])
                     with col_i:
                         if encontrado:
-                            st.markdown(f'<div class="highlight-page">📍 Página(s): {", ".join(map(str, encontrado))}</div>', unsafe_allow_html=True)
+                            st.markdown(f'<div class="highlight-page">📍 Encontrado en página(s): {", ".join(map(str, encontrado))}</div>', unsafe_allow_html=True)
+                        else:
+                            st.info("Referencia encontrada en el contenido general del documento.")
                     with col_b:
                         p_dest = encontrado[0] if encontrado else 1
                         st.components.v1.html(abrir_pdf_js(blob, p_dest), height=70)
-                        st.download_button("💾 Bajar", blob, nombre, "application/pdf", key=f"d_{doc_id}")
+                        st.download_button("💾 Descargar", blob, nombre, "application/pdf", key=f"d_{doc_id}")
         else:
-            st.error("Sin resultados.")
+            st.error("No se encontraron documentos con esa referencia.")
