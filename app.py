@@ -18,18 +18,28 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# Inicialización de la base de datos
-conn = sqlite3.connect('gestion_cronosol.db', check_same_thread=False)
-c = conn.cursor()
-# Añadimos la columna 'paginas_json' para guardar el texto por página
-c.execute('''CREATE TABLE IF NOT EXISTS documentos 
-             (id TEXT PRIMARY KEY, tipo TEXT, numero TEXT, fecha TEXT, 
-              proveedor TEXT, contenido TEXT, nombre_archivo TEXT, pdf_blob BLOB, paginas_json TEXT)''')
-conn.commit()
+# Inicialización de la base de datos con migración automática
+def init_db():
+    conn = sqlite3.connect('gestion_cronosol.db', check_same_thread=False)
+    c = conn.cursor()
+    # Crear tabla si no existe
+    c.execute('''CREATE TABLE IF NOT EXISTS documentos 
+                 (id TEXT PRIMARY KEY, tipo TEXT, numero TEXT, fecha TEXT, 
+                  proveedor TEXT, contenido TEXT, nombre_archivo TEXT, pdf_blob BLOB)''')
+    
+    # MIGRACIÓN: Verificar si falta la columna 'paginas_json' (Evita el OperationalError)
+    c.execute("PRAGMA table_info(documentos)")
+    columnas = [col[1] for col in c.fetchall()]
+    if 'paginas_json' not in columnas:
+        c.execute("ALTER TABLE documentos ADD COLUMN paginas_json TEXT")
+    
+    conn.commit()
+    return conn, c
+
+conn, c = init_db()
 
 def abrir_pdf_js(bin_file, page_num=1):
     base64_pdf = base64.b64encode(bin_file).decode('utf-8')
-    # Script mejorado para abrir en una página específica si el visor del navegador lo soporta
     js = f"""
     <script>
     function openPDF() {{
@@ -41,7 +51,6 @@ def abrir_pdf_js(bin_file, page_num=1):
         const byteArray = new Uint8Array(byteNumbers);
         const file = new Blob([byteArray], {{type: 'application/pdf'}});
         const fileURL = URL.createObjectURL(file);
-        // Intentamos pasar el parámetro de página al visor nativo (#page=X)
         window.open(fileURL + '#page={page_num}', '_blank');
     }}
     </script>
@@ -91,9 +100,9 @@ if choice == "📤 Cargar Documentos":
                             for i, pagina in enumerate(doc):
                                 p_texto = pagina.get_text().upper()
                                 texto_completo += p_texto + " "
-                                dict_paginas[i+1] = p_texto # Guardamos texto por número de página
+                                dict_paginas[i+1] = p_texto
                         
-                        c.execute("INSERT INTO documentos VALUES (?,?,?,?,?,?,?,?,?)", 
+                        c.execute("INSERT INTO documentos (id, tipo, numero, fecha, proveedor, contenido, nombre_archivo, pdf_blob, paginas_json) VALUES (?,?,?,?,?,?,?,?,?)", 
                                   (doc_id, tipo, numero, str(fecha), proveedor.upper(), 
                                    texto_completo, archivo.name, pdf_bytes, json.dumps(dict_paginas)))
                         conn.commit()
@@ -117,23 +126,23 @@ elif choice == "🔍 Buscador Rápido":
                 doc_id, tipo, num, fecha, prov, nombre, paginas_json, blob = res
                 
                 with st.expander(f"📌 {tipo}: {num} - {prov}"):
-                    # Analizar en qué páginas está
-                    paginas_dict = json.loads(paginas_json)
-                    encontrado_en = [p for p, contenido in paginas_dict.items() if query in contenido]
+                    # Manejo de documentos viejos que no tienen JSON de páginas
+                    encontrado_en = []
+                    if paginas_json:
+                        paginas_dict = json.loads(paginas_json)
+                        encontrado_en = [p for p, contenido in paginas_dict.items() if query in contenido]
                     
                     col_info, col_btn = st.columns([2, 1])
                     with col_info:
                         st.write(f"**Fecha:** {fecha}")
                         if encontrado_en:
-                            st.markdown(f'<div class="highlight-page">📍 Encontrado en página(s): {", ".join(encontrado_en)}</div>', unsafe_allow_html=True)
+                            st.markdown(f'<div class="highlight-page">📍 Encontrado en página(s): {", ".join(map(str, encontrado_en))}</div>', unsafe_allow_html=True)
                         else:
-                            st.write("*(Referencia encontrada en metadatos o texto general)*")
+                            st.write("*(Referencia encontrada en texto general o registro antiguo)*")
                     
                     with col_btn:
-                        # Si se encontró en una página específica, intentamos abrir esa por defecto
                         pag_destino = encontrado_en[0] if encontrado_en else 1
                         st.components.v1.html(abrir_pdf_js(blob, pag_destino), height=70)
-                        
                         st.download_button(label="💾 Bajar PDF", data=blob, file_name=nombre, mime="application/pdf", key=f"dl_{doc_id}")
         else:
             st.error(f"No se encontró la referencia '{query}'.")
