@@ -18,7 +18,6 @@ st.markdown("""
     .stDownloadButton>button { background-color: #28a745 !important; color: white !important; }
     .highlight-page { background-color: #fff3cd; padding: 5px; border-radius: 5px; border-left: 5px solid #ffc107; font-weight: bold; margin-bottom: 10px; }
     .upload-card { border: 1px solid #ddd; padding: 15px; border-radius: 10px; margin-bottom: 15px; background-color: #ffffff; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-    .label-auto { color: #28a745; font-size: 0.8em; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -38,34 +37,34 @@ def init_db():
 
 conn, c = init_db()
 
-# Lógica de extracción REFINADA para facturas colombianas
+# Lógica de extracción REFINADA
 def extraer_datos_v2(texto, tipo):
     datos = {"numero": "", "fecha": "", "proveedor": ""}
-    lineas = [l.strip() for l in texto.split('\n') if len(l.strip()) > 2]
+    # Limpiamos líneas vacías y eliminamos ruidos comunes
+    lineas = [l.strip() for l in texto.split('\n') if len(l.strip()) > 3]
     
-    # 1. Extraer Proveedor (Suele ser la primera línea que no sea "+---" o basura)
-    for l in lineas[:5]:
-        if not any(x in l for x in ["+---", "NIT", "FECHA", "FACTURA", "PÁGINA"]):
+    # 1. Extraer Proveedor (Buscamos la primera línea con sentido)
+    ignore_list = ["+---", "NIT", "FECHA", "FACTURA", "PÁGINA", "PAGINA", "TEL", "DIRECCIÓN", "ELECTRONICA"]
+    for l in lineas[:8]:
+        if not any(x in l.upper() for x in ignore_list):
             datos["proveedor"] = l
             break
 
-    # 2. Extraer Fecha (Buscar cerca de etiquetas de fecha)
+    # 2. Extraer Fecha
     match_fecha = re.search(r'(?:FECHA|EMISIÓN|GENERACIÓN|FECHA VALOR).*?(\d{1,2}[/-]\d{1,2}[/-]\d{4}|\d{4}[/-]\d{1,2}[/-]\d{1,2})', texto, re.IGNORECASE | re.DOTALL)
     if match_fecha:
         datos["fecha"] = match_fecha.group(1)
     else:
-        # Fallback a cualquier fecha encontrada
         todas_fechas = re.findall(r'(\d{1,2}[/-]\d{1,2}[/-]\d{4})', texto)
         if todas_fechas: datos["fecha"] = todas_fechas[0]
 
     # 3. Extraer Número
     if tipo == "Factura de Compra":
-        # Patrón para "Factura No. ABC-123" o similares
         match_num = re.search(r'(?:FACTURA|VENTA|ELECTRÓNICA).*?(?:NO\.|NRO|NUMERO)[:\s#]*([A-Z0-9-]+)', texto, re.IGNORECASE | re.DOTALL)
         if match_num:
             datos["numero"] = match_num.group(1)
     else:
-        # Patrón para Manifiestos (Número de aceptación de 10+ dígitos)
+        # Manifiestos/Declaraciones (Número largo)
         match_acep = re.search(r'(?:ACEPTACIÓN|DECLARACIÓN).*?[:\s#]*(\d{10,20})', texto, re.IGNORECASE | re.DOTALL)
         if match_acep:
             datos["numero"] = match_acep.group(1)
@@ -100,26 +99,29 @@ with st.sidebar:
     st.title("🛡️ Cronosol")
     choice = st.radio("Operaciones", ["🔍 Buscador Rápido", "📤 Cargar Documentos"])
     st.divider()
-    st.info("Herramienta de cumplimiento normativo DIAN.")
+    st.info("Sistema de Gestión de Documentación de Aduana.")
 
 if choice == "📤 Cargar Documentos":
-    st.header("Carga Masiva con IA de Extracción")
-    tipo_doc = st.radio("Tipo de archivos a cargar:", ["Factura de Compra", "Manifiesto de Aduana"], horizontal=True)
+    st.header("Carga Masiva con Extracción")
+    tipo_doc = st.radio("Tipo de archivos:", ["Factura de Compra", "Manifiesto de Aduana"], horizontal=True)
     
+    # El uploader refresca la página al cambiar archivos
     archivos = st.file_uploader(f"Arrastre sus archivos PDF", type="pdf", accept_multiple_files=True)
 
     if archivos:
-        if 'pendientes' not in st.session_state or st.button("🔄 Reiniciar carga"):
+        # Usamos un botón para iniciar el análisis explícitamente y evitar duplicados de caché
+        if st.button("🔍 Analizar Archivos"):
             st.session_state.pendientes = []
             
-            with st.spinner("Analizando encabezados..."):
+            with st.spinner("Leyendo documentos..."):
                 for f in archivos:
+                    f.seek(0) # Resetear puntero de lectura
                     pdf_bytes = f.read()
                     doc_id = hashlib.sha256(pdf_bytes).hexdigest()
                     
                     with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
-                        # Leemos solo las primeras 2 páginas para extraer metadatos
                         texto_meta = ""
+                        # Analizamos las primeras 2 páginas para mayor contexto
                         for p in range(min(2, len(doc))):
                             texto_meta += doc[p].get_text()
                         
@@ -131,54 +133,51 @@ if choice == "📤 Cargar Documentos":
                             "fecha": sugerencias["fecha"], "blob": pdf_bytes
                         })
 
-        # Mostrar tarjetas de revisión
-        st.subheader("📋 Revisión de datos extraídos")
-        documentos_validados = []
-        
-        for i, d in enumerate(st.session_state.pendientes):
-            with st.container():
-                st.markdown('<div class="upload-card">', unsafe_allow_html=True)
-                st.write(f"📄 **Archivo:** {d['nombre']}")
-                c1, c2, c3 = st.columns(3)
-                with c1:
-                    new_num = st.text_input("Número Factura/Manifiesto", value=d['numero'], key=f"n_{i}")
-                with c2:
-                    new_prov = st.text_input("Proveedor / Importador", value=d['proveedor'], key=f"p_{i}")
-                with c3:
-                    new_fec = st.text_input("Fecha (DD/MM/AAAA)", value=d['fecha'], key=f"f_{i}")
-                
-                documentos_validados.append({**d, "numero": new_num, "proveedor": new_prov, "fecha": new_fec})
-                st.markdown('</div>', unsafe_allow_html=True)
+        # Mostrar tarjetas de revisión si hay pendientes
+        if 'pendientes' in st.session_state and st.session_state.pendientes:
+            st.subheader("📋 Revisión de datos")
+            documentos_finales = []
+            
+            for i, d in enumerate(st.session_state.pendientes):
+                with st.container():
+                    st.markdown('<div class="upload-card">', unsafe_allow_html=True)
+                    st.write(f"📄 **{d['nombre']}**")
+                    c1, c2, c3 = st.columns(3)
+                    with c1:
+                        new_num = st.text_input("Número", value=d['numero'], key=f"n_{d['id']}_{i}")
+                    with c2:
+                        new_prov = st.text_input("Proveedor", value=d['proveedor'], key=f"p_{d['id']}_{i}")
+                    with c3:
+                        new_fec = st.text_input("Fecha", value=d['fecha'], key=f"f_{d['id']}_{i}")
+                    
+                    documentos_finales.append({**d, "numero": new_num, "proveedor": new_prov, "fecha": new_fec})
+                    st.markdown('</div>', unsafe_allow_html=True)
 
-        if st.button("🚀 Confirmar y Guardar en Base de Datos"):
-            progreso = st.progress(0)
-            status = st.empty()
-            
-            for idx, doc in enumerate(documentos_validados):
-                status.text(f"Indexando {doc['nombre']}...")
+            if st.button("🚀 Guardar Todo en Base de Datos"):
+                bar = st.progress(0)
+                for idx, doc in enumerate(documentos_finales):
+                    texto_full = ""
+                    dict_pags = {}
+                    with fitz.open(stream=doc['blob'], filetype="pdf") as pdf:
+                        for p_idx, pagina in enumerate(pdf):
+                            t = pagina.get_text().upper()
+                            texto_full += t + " "
+                            dict_pags[p_idx+1] = t
+                    
+                    try:
+                        c.execute("INSERT INTO documentos VALUES (?,?,?,?,?,?,?,?,?)", 
+                                 (doc['id'], doc['tipo'], doc['numero'], doc['fecha'], 
+                                  doc['proveedor'].upper(), texto_full, doc['nombre'], 
+                                  doc['blob'], json.dumps(dict_pags)))
+                        conn.commit()
+                    except sqlite3.IntegrityError:
+                        pass
+                    
+                    bar.progress((idx + 1) / len(documentos_finales))
                 
-                texto_full = ""
-                dict_pags = {}
-                with fitz.open(stream=doc['blob'], filetype="pdf") as pdf:
-                    for p_idx, pagina in enumerate(pdf):
-                        t = pagina.get_text().upper()
-                        texto_full += t + " "
-                        dict_pags[p_idx+1] = t
-                
-                try:
-                    c.execute("INSERT INTO documentos VALUES (?,?,?,?,?,?,?,?,?)", 
-                             (doc['id'], doc['tipo'], doc['numero'], doc['fecha'], 
-                              doc['proveedor'].upper(), texto_full, doc['nombre'], 
-                              doc['blob'], json.dumps(dict_pags)))
-                    conn.commit()
-                except sqlite3.IntegrityError:
-                    pass # Ya existe
-                
-                progreso.progress((idx + 1) / len(documentos_validados))
-            
-            st.success(f"✅ Se guardaron {len(documentos_validados)} documentos correctamente.")
-            st.balloons()
-            st.session_state.pendientes = []
+                st.success("✅ Guardado exitoso.")
+                st.session_state.pendientes = []
+                st.rerun()
 
 elif choice == "🔍 Buscador Rápido":
     st.header("Buscador de Trazabilidad")
