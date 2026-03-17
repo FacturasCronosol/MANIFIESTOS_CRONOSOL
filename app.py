@@ -200,10 +200,11 @@ elif choice == "🔍 Buscador":
                 doc_id, tipo, num, fecha_iso, nombre, pags, blob = r
                 
                 # Definición de Emoji y Formato según tu solicitud
+                # Verde para Facturas, Azul para Manifiestos
                 emoji = "🟢" if tipo == "Factura de Compra" else "🔵"
                 fecha_vis = formatear_fecha_visual(fecha_iso)
                 
-                # Título estandarizado: EMOJI FECHA | TIPO/NOMBRE
+                # Título estandarizado: EMOJI FECHA | TIPO - NOMBRE
                 with st.expander(f"{emoji} {fecha_vis} | {tipo} - {nombre}"):
                     encontrado = []
                     if pags:
