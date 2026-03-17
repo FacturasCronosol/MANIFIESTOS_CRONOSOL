@@ -199,7 +199,7 @@ if choice == "📤 CARGAR DOCUMENTOS":
 elif choice == "🔍 BUSCADOR":
     st.image("https://effi.com.co/public/images/app/empresas/2669785618790903_3825617455082073354.jpg")
     st.header("Buscador de Referencias")
-    query = st.text_input("REFERENCIA o PALABRA CLAVE").upper()
+    query = st.text_input("REFERENCIA / PALABRA CLAVE").upper()
 
     if query:
         try:
