@@ -131,6 +131,8 @@ def abrir_pdf_js(bin_file, page_num=1):
 
 # --- INTERFAZ ---
 with st.sidebar:
+    # Añade el logo aquí arriba
+    st.image("https://effi.com.co/public/images/app/empresas/2669785618790903_3825617455082073354.jpg", use_container_width=True)
     st.title("CRONOSOL - DIAN")
     choice = st.radio("Menú", ["🔍 BUSCADOR", "📤 CARGAR DOCUMENTOS"])
     st.divider()
