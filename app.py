@@ -14,7 +14,7 @@ st.markdown("""
     .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #007bff; color: white; }
     .stDataFrame { width: 100%; }
     </style>
-    """, unsafe_allow_stdio=True)
+    """, unsafe_allow_html=True)
 
 # Base de datos
 conn = sqlite3.connect('gestion_cronosol.db', check_same_thread=False)
