@@ -15,10 +15,10 @@ st.set_page_config(page_title="CRONOSOL - DIAN", layout="wide", page_icon="https
 # Estilo personalizado
 st.markdown("""
     <style>
-    .stButton>button { width: 100%; border-radius: 8px; height: 3.5em; background-color: #007bff; color: white; font-weight: bold; }
+    .stButton>button { width: 100%; border-radius: 8px; height: 3.5em; background-color: #001770; color: white; font-weight: bold; }
     .stDownloadButton>button { background-color: #28a745 !important; color: white !important; }
     .highlight-page { background-color: #fff3cd; padding: 5px; border-radius: 5px; border-left: 5px solid #ffc107; font-weight: bold; margin-bottom: 10px; }
-    .upload-card { border: 1px solid #ddd; padding: 15px; border-radius: 10px; margin-bottom: 15px; background-color: #ffffff; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    .upload-card { border: 1px solid #ddd; padding: 15px; border-radius: 10px; margin-bottom: 15px; background-color: #80e000; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
     </style>
     """, unsafe_allow_html=True)
 
