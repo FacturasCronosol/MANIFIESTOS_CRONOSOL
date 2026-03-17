@@ -131,14 +131,14 @@ def abrir_pdf_js(bin_file, page_num=1):
 
 # --- INTERFAZ ---
 with st.sidebar:
-    st.title("🛡️ Cronosol")
-    choice = st.radio("Menú", ["🔍 Buscador", "📤 Carga Masiva"])
+    st.title("CRONOSOL - DIAN")
+    choice = st.radio("Menú", ["🔍 BUSCADOR", "📤 CARGAR DOCUMENTOS"])
     st.divider()
-    st.info("Orden cronológico (Nuevo → Viejo).")
+    st.info("Orden cronológico.")
 
-if choice == "📤 Carga Masiva":
-    st.header("Carga Masiva de Documentos")
-    tipo_doc = st.radio("Tipo de Documento:", ["Factura de Compra", "Manifiesto de Aduana"], horizontal=True)
+if choice == "📤 CARGAR DOCUMENTOS":
+    st.header("CARGA MASIVA")
+    tipo_doc = st.radio("Tipo de Documento:", ["Facturas de Compra", "Manifiestos"], horizontal=True)
     archivos = st.file_uploader("Subir archivos PDF", type="pdf", accept_multiple_files=True)
 
     if archivos:
@@ -194,9 +194,9 @@ if choice == "📤 Carga Masiva":
                 st.session_state.pendientes = []
                 st.rerun()
 
-elif choice == "🔍 Buscador":
-    st.header("Buscador de Trazabilidad")
-    query = st.text_input("Ingrese Referencia, Contenedor o Palabra Clave").upper()
+elif choice == "🔍 BUSCADOR":
+    st.header("Buscador de Referencias")
+    query = st.text_input("REFERENCIA o PALABRA CLAVE").upper()
 
     if query:
         try:
@@ -227,7 +227,7 @@ elif choice == "🔍 Buscador":
                             p_dest = encontrado[0] if encontrado else 1
                             pdf_resaltado = resaltar_pdf(blob, query)
                             st.components.v1.html(abrir_pdf_js(pdf_resaltado, p_dest), height=70)
-                            st.download_button("💾 Bajar PDF", pdf_resaltado, f"RESALTADO_{nombre}", "application/pdf", key=f"d_{doc_id}")
+                            st.download_button("💾 DESCARGAR PDF", pdf_resaltado, f"RESALTADO_{nombre}", "application/pdf", key=f"d_{doc_id}")
             else:
                 st.error("No se encontraron resultados.")
         except sqlite3.OperationalError as e:
