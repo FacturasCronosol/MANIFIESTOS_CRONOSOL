@@ -211,7 +211,7 @@ elif choice == "🔍 BUSCADOR":
                 st.write(f"Resultados encontrados: **{len(res)}**")
                 for r in res:
                     doc_id, tipo, num, fecha_iso, nombre, pags, blob = r
-                    emoji = "🟢" if tipo == "Factura de Compra" else "🔵"
+                    emoji = "🟢" if tipo == "Factura de Compras" else "🔵"
                     fecha_vis = formatear_fecha_visual(fecha_iso)
                     
                     with st.expander(f"{emoji} {fecha_vis} | {tipo} - {nombre}"):
