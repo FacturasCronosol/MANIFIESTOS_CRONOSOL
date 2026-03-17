@@ -27,7 +27,8 @@ conn.commit()
 def mostrar_pdf(bin_file):
     base64_pdf = base64.b64encode(bin_file).decode('utf-8')
     pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
-    st.markdown(pdf_display, unsafe_allow_stdio=True)
+    # AQUÍ ESTABA EL ERROR: Cambia unsafe_allow_stdio por unsafe_allow_html
+    st.markdown(pdf_display, unsafe_allow_html=True)
 
 # --- MENÚ LATERAL ---
 with st.sidebar:
