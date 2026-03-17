@@ -28,13 +28,21 @@ MESES_ES = {
     7: "jul", 8: "ago", 9: "sep", 10: "oct", 11: "nov", 12: "dic"
 }
 
-# Inicialización de la base de datos
+# Inicialización de la base de datos mejorada para evitar errores de columnas
 def init_db():
     conn = sqlite3.connect('gestion_cronosol.db', check_same_thread=False)
     c = conn.cursor()
+    # Crear tabla con todas las columnas necesarias si no existe
     c.execute('''CREATE TABLE IF NOT EXISTS documentos 
                  (id TEXT PRIMARY KEY, tipo TEXT, numero TEXT, fecha_iso TEXT, 
                   proveedor TEXT, contenido TEXT, nombre_archivo TEXT, pdf_blob BLOB, paginas_json TEXT)''')
+    
+    # Verificar si falta la columna paginas_json (por versiones antiguas)
+    c.execute("PRAGMA table_info(documentos)")
+    columns = [info[1] for info in c.fetchall()]
+    if 'paginas_json' not in columns:
+        c.execute("ALTER TABLE documentos ADD COLUMN paginas_json TEXT")
+    
     conn.commit()
     return conn, c
 
@@ -59,39 +67,31 @@ def normalizar_fecha_a_iso(texto_fecha):
     m1 = re.search(r'(\d{1,2})[/-](\d{1,2})[/-](\d{4})', texto_fecha)
     if m1:
         d, m, y = m1.groups()
-        try:
-            return f"{int(y):04d}-{int(m):02d}-{int(d):02d}"
+        try: return f"{int(y):04d}-{int(m):02d}-{int(d):02d}"
         except: pass
     
-    # Intentar YYYY/MM/DD o YYYY-MM-DD
+    # Intentar YYYY/MM/DD
     m2 = re.search(r'(\d{4})[/-](\d{1,2})[/-](\d{1,2})', texto_fecha)
     if m2:
         y, m, d = m2.groups()
-        try:
-            return f"{int(y):04d}-{int(m):02d}-{int(d):02d}"
+        try: return f"{int(y):04d}-{int(m):02d}-{int(d):02d}"
         except: pass
     
-    # Si ya viene en formato ISO YYYY-MM-DD (por ejemplo del input corregido)
-    m3 = re.search(r'(\d{4})-(\d{2})-(\d{2})', texto_fecha)
-    if m3:
+    # Si ya es ISO
+    if re.match(r'^\d{4}-\d{2}-\d{2}$', texto_fecha):
         return texto_fecha
 
     return datetime.now().strftime("%Y-%m-%d")
 
 def extraer_fecha_texto(texto):
-    """Busca patrones de fecha en el texto del PDF con mayor precisión"""
-    # Buscamos primero cerca de palabras clave para evitar capturar fechas de vencimiento u otras
+    """Busca patrones de fecha en el texto del PDF"""
     prioridades = [r'FECHA EMISION', r'FECHA DE EMISIÓN', r'FECHA DE FACTURA', r'FECHA:']
     for p in prioridades:
         match = re.search(f'{p}.*?(\\d{{1,2}}[/-]\\d{{1,2}}[/-]\\d{{4}})', texto, re.IGNORECASE | re.DOTALL)
         if match:
             return normalizar_fecha_a_iso(match.group(1))
 
-    # Búsqueda general si falla lo anterior
-    formatos = [
-        r'(\d{1,2}[/-]\d{1,2}[/-]\d{4})', 
-        r'(\d{4}[/-]\d{1,2}[/-]\d{1,2})'
-    ]
+    formatos = [r'(\d{1,2}[/-]\d{1,2}[/-]\d{4})', r'(\d{4}[/-]\d{1,2}[/-]\d{1,2})']
     for fmt in formatos:
         match = re.search(fmt, texto)
         if match:
@@ -127,7 +127,7 @@ with st.sidebar:
     st.title("🛡️ Cronosol")
     choice = st.radio("Menú", ["🔍 Buscador", "📤 Carga Masiva"])
     st.divider()
-    st.info("Orden cronológico: Más reciente arriba.")
+    st.info("Orden cronológico activado.")
 
 if choice == "📤 Carga Masiva":
     st.header("Carga Masiva de Documentos")
@@ -150,21 +150,20 @@ if choice == "📤 Carga Masiva":
                         })
 
         if 'pendientes' in st.session_state and st.session_state.pendientes:
-            st.subheader("📋 Revisión de Fechas")
-            st.caption("Ajuste la fecha si la detección automática no fue precisa.")
+            st.subheader("📋 Revisión de Datos")
             documentos_finales = []
             for i, d in enumerate(st.session_state.pendientes):
                 with st.container():
                     st.markdown('<div class="upload-card">', unsafe_allow_html=True)
                     col1, col2 = st.columns([1, 2])
                     with col1:
-                        f_input = st.text_input(f"Fecha Detectada (Año-Mes-Día)", value=d['fecha_iso'], key=f"f_{i}")
+                        f_input = st.text_input(f"Fecha (AAAA-MM-DD)", value=d['fecha_iso'], key=f"f_{i}")
                     with col2:
                         st.write(f"📄 **{d['nombre']}**")
                     documentos_finales.append({**d, "fecha_iso": normalizar_fecha_a_iso(f_input)})
                     st.markdown('</div>', unsafe_allow_html=True)
 
-            if st.button("🚀 Guardar Todo en Base de Datos"):
+            if st.button("🚀 Guardar en Base de Datos"):
                 bar = st.progress(0)
                 for idx, doc in enumerate(documentos_finales):
                     texto_full = ""
@@ -175,36 +174,38 @@ if choice == "📤 Carga Masiva":
                             texto_full += t + " "
                             dict_pags[p_idx+1] = t
                     try:
-                        c.execute("INSERT INTO documentos VALUES (?,?,?,?,?,?,?,?,?)", 
+                        # INSERT explícito por nombre de columna para evitar el OperationalError
+                        c.execute("""INSERT INTO documentos 
+                                   (id, tipo, numero, fecha_iso, proveedor, contenido, nombre_archivo, pdf_blob, paginas_json) 
+                                   VALUES (?,?,?,?,?,?,?,?,?)""", 
                                  (doc['id'], doc['tipo'], doc['nombre'], doc['fecha_iso'], 
                                   "GENERAL", texto_full, doc['nombre'], doc['blob'], json.dumps(dict_pags)))
                         conn.commit()
-                    except: pass
+                    except sqlite3.IntegrityError:
+                        pass # Ya existe
+                    except Exception as e:
+                        st.error(f"Error en {doc['nombre']}: {e}")
                     bar.progress((idx + 1) / len(documentos_finales))
-                st.success("¡Documentos guardados y ordenados!")
+                st.success("¡Guardado correctamente!")
                 st.session_state.pendientes = []
                 st.rerun()
 
 elif choice == "🔍 Buscador":
     st.header("Buscador de Trazabilidad")
-    query = st.text_input("Ingrese Referencia o Palabra Clave").upper()
+    query = st.text_input("Ingrese Referencia").upper()
 
     if query:
-        # Ordenamos por fecha_iso DESC para que lo más nuevo salga primero
-        c.execute("SELECT id, tipo, numero, fecha_iso, nombre_archivo, paginas_json, pdf_blob FROM documentos WHERE contenido LIKE ? ORDER BY fecha_iso DESC", (f'%{query}%',))
+        c.execute("""SELECT id, tipo, numero, fecha_iso, nombre_archivo, paginas_json, pdf_blob 
+                     FROM documentos WHERE contenido LIKE ? ORDER BY fecha_iso DESC""", (f'%{query}%',))
         res = c.fetchall()
         
         if res:
-            st.write(f"Resultados encontrados: **{len(res)}**")
+            st.write(f"Resultados: **{len(res)}**")
             for r in res:
                 doc_id, tipo, num, fecha_iso, nombre, pags, blob = r
-                
-                # Definición de Emoji y Formato según tu solicitud
-                # Verde para Facturas, Azul para Manifiestos
                 emoji = "🟢" if tipo == "Factura de Compra" else "🔵"
                 fecha_vis = formatear_fecha_visual(fecha_iso)
                 
-                # Título estandarizado: EMOJI FECHA | TIPO - NOMBRE
                 with st.expander(f"{emoji} {fecha_vis} | {tipo} - {nombre}"):
                     encontrado = []
                     if pags:
@@ -214,11 +215,10 @@ elif choice == "🔍 Buscador":
                     col_i, col_b = st.columns([2, 1])
                     with col_i:
                         if encontrado:
-                            st.markdown(f'<div class="highlight-page">📍 Encontrado en página(s): {", ".join(map(str, encontrado))}</div>', unsafe_allow_html=True)
-                        st.write(f"Nombre de archivo: `{nombre}`")
+                            st.markdown(f'<div class="highlight-page">📍 Página(s): {", ".join(map(str, encontrado))}</div>', unsafe_allow_html=True)
                     with col_b:
                         p_dest = encontrado[0] if encontrado else 1
                         st.components.v1.html(abrir_pdf_js(blob, p_dest), height=70)
-                        st.download_button("💾 Descargar PDF", blob, nombre, "application/pdf", key=f"d_{doc_id}")
+                        st.download_button("💾 Bajar", blob, nombre, "application/pdf", key=f"d_{doc_id}")
         else:
-            st.error("No se encontraron resultados para esta búsqueda.")
+            st.error("Sin resultados.")
