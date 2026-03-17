@@ -99,8 +99,11 @@ def extraer_fecha_texto(texto):
             
     return datetime.now().strftime("%Y-%m-%d")
 
-def abrir_pdf_js(bin_file, page_num=1):
+def abrir_pdf_js(bin_file, page_num=1, search_text=""):
     base64_pdf = base64.b64encode(bin_file).decode('utf-8')
+    # Limpiamos el texto de búsqueda para evitar problemas con comillas
+    search_query = search_text.replace('"', '').replace("'", "")
+    
     js = f"""
     <script>
     function openPDF() {{
@@ -112,7 +115,10 @@ def abrir_pdf_js(bin_file, page_num=1):
         const byteArray = new Uint8Array(byteNumbers);
         const file = new Blob([byteArray], {{type: 'application/pdf'}});
         const fileURL = URL.createObjectURL(file);
-        window.open(fileURL + '#page={page_num}', '_blank');
+        
+        // El parámetro #search= permite resaltar texto en la mayoría de visores modernos (Chrome, Edge)
+        const highlightParam = "{search_query}" ? "&search=" + encodeURIComponent("{search_query}") : "";
+        window.open(fileURL + '#page={page_num}' + highlightParam, '_blank');
     }}
     </script>
     <button onclick="openPDF()" style="
@@ -220,7 +226,8 @@ elif choice == "🔍 Buscador":
                                 st.info("Referencia encontrada en el contenido general.")
                         with col_b:
                             p_dest = encontrado[0] if encontrado else 1
-                            st.components.v1.html(abrir_pdf_js(blob, p_dest), height=70)
+                            # Pasamos el query a la función de apertura para que resalte el texto
+                            st.components.v1.html(abrir_pdf_js(blob, p_dest, query), height=70)
                             st.download_button("💾 Bajar PDF", blob, nombre, "application/pdf", key=f"d_{doc_id}")
             else:
                 st.error("No se encontraron resultados.")
