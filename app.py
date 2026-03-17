@@ -8,7 +8,7 @@ import base64
 # Configuración profesional para visualización en PC y Móvil
 st.set_page_config(page_title="Gestión Cronosol - DIAN", layout="wide", page_icon="🛡️")
 
-# Estilo personalizado para botones táctiles grandes
+# Estilo personalizado para botones y optimización de UI
 st.markdown("""
     <style>
     .stButton>button { 
@@ -19,21 +19,10 @@ st.markdown("""
         color: white; 
         font-weight: bold;
     }
-    .open-pdf-btn {
-        display: inline-block;
-        padding: 0.75em 1.5em;
-        background-color: #28a745;
-        color: white;
-        text-decoration: none;
-        border-radius: 8px;
-        width: 100%;
-        text-align: center;
-        font-weight: bold;
-        margin-top: 10px;
-    }
-    .open-pdf-btn:hover {
-        background-color: #218838;
-        color: white;
+    /* Estilo para el botón de apertura de PDF */
+    .stDownloadButton>button {
+        background-color: #28a745 !important;
+        color: white !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -46,12 +35,38 @@ c.execute('''CREATE TABLE IF NOT EXISTS documentos
               proveedor TEXT, contenido TEXT, nombre_archivo TEXT, pdf_blob BLOB)''')
 conn.commit()
 
-# Función para generar el enlace de apertura en pestaña nueva
-def get_pdf_display_link(bin_file, file_name):
+# Función para abrir PDF en pestaña nueva usando JavaScript (Solución definitiva a pestaña vacía)
+def abrir_pdf_js(bin_file, file_name):
     base64_pdf = base64.b64encode(bin_file).decode('utf-8')
-    # Usamos un enlace HTML con target="_blank" para abrir en pestaña nueva
-    href = f'<a href="data:application/pdf;base64,{base64_pdf}" target="_blank" class="open-pdf-btn">📄 Abrir PDF en pestaña nueva</a>'
-    return href
+    # Script para crear un Blob en el cliente y abrirlo sin restricciones de data-url
+    js = f"""
+    <script>
+    function openPDF() {{
+        const byteCharacters = atob("{base64_pdf}");
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {{
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }}
+        const byteArray = new Uint8Array(byteNumbers);
+        const file = new Blob([byteArray], {{type: 'application/pdf'}});
+        const fileURL = URL.createObjectURL(file);
+        window.open(fileURL, '_blank');
+    }}
+    </script>
+    <button onclick="openPDF()" style="
+        width: 100%;
+        padding: 0.75em 1.5em;
+        background-color: #28a745;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-weight: bold;
+        cursor: pointer;
+        margin-top: 10px;
+        margin-bottom: 10px;
+    ">📄 Visualizar PDF (Pestaña Nueva)</button>
+    """
+    return js
 
 # --- MENÚ LATERAL ---
 with st.sidebar:
@@ -104,35 +119,30 @@ elif choice == "🔍 Buscador Rápido":
     query = st.text_input("Ingrese Referencia o Palabra Clave").upper()
 
     if query:
-        # Búsqueda global en el contenido extraído de los PDFs
-        df = pd.read_sql_query(f"""SELECT id, tipo, numero, fecha, proveedor, nombre_archivo 
-                                   FROM documentos 
-                                   WHERE contenido LIKE '%{query}%' 
-                                   ORDER BY fecha DESC""", conn)
+        # Búsqueda global
+        df = pd.read_sql_query(f"SELECT id, tipo, numero, fecha, proveedor, nombre_archivo FROM documentos WHERE contenido LIKE '%{query}%' ORDER BY fecha DESC", conn)
         
         if not df.empty:
-            st.write(f"Se encontraron **{len(df)}** registros relacionados con: `{query}`")
+            st.write(f"Se encontraron **{len(df)}** registros para: `{query}`")
             
-            # Selector de resultados
             for index, row in df.iterrows():
                 with st.expander(f"📌 {row['tipo']}: {row['numero']} - {row['proveedor']}"):
                     col_info, col_btn = st.columns([2, 1])
                     
                     with col_info:
                         st.write(f"**Fecha:** {row['fecha']}")
-                        st.write(f"**Archivo:** {row['nombre_archivo']}")
+                        st.write(f"**Archivo Original:** {row['nombre_archivo']}")
                     
                     with col_btn:
-                        # Recuperar el BLOB del PDF para este registro específico
                         c.execute("SELECT pdf_blob FROM documentos WHERE id=?", (row['id'],))
                         blob = c.fetchone()[0]
                         
-                        # Mostrar el botón que abre el PDF en pestaña nueva
-                        st.markdown(get_pdf_display_link(blob, row['nombre_archivo']), unsafe_allow_html=True)
+                        # Botón con JavaScript para apertura limpia en pestaña nueva
+                        st.components.v1.html(abrir_pdf_js(blob, row['nombre_archivo']), height=70)
                         
-                        # Botón opcional de descarga por si falla el anterior en algunos móviles
+                        # Botón de descarga física (siempre necesario como respaldo)
                         st.download_button(
-                            label="💾 Descargar copia",
+                            label="💾 Descargar copia local",
                             data=blob,
                             file_name=row['nombre_archivo'],
                             mime="application/pdf",
