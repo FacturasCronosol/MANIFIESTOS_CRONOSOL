@@ -11,14 +11,14 @@ import zipfile
 from io import BytesIO
 from datetime import datetime
 
-# Configuración profesional
+# Configuración profesional de la página
 st.set_page_config(
     page_title="Gestión Cronosol - DIAN", 
     layout="wide", 
     page_icon="🛡️"
 )
 
-# --- ESTILOS ---
+# --- ESTILOS PERSONALIZADOS ---
 st.markdown("""
     <style>
     .stButton>button { width: 100%; border-radius: 8px; height: 3.5em; font-weight: bold; }
@@ -38,7 +38,6 @@ st.markdown("""
     .highlight-page { background-color: #fff3cd; padding: 10px; border-radius: 5px; border-left: 5px solid #ffc107; font-weight: bold; margin-bottom: 10px; color: #856404; }
     .upload-card { border: 1px solid #ddd; padding: 15px; border-radius: 10px; margin-bottom: 15px; background-color: #ffffff; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
     
-    /* Contenedor de descargas masivas en buscador */
     .zip-download-container {
         background-color: #f8f9fa;
         padding: 20px;
@@ -49,7 +48,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- CONFIGURACIÓN Y DB ---
+# --- CONSTANTES Y BASE DE DATOS ---
 MESES_ES = {1: "ene", 2: "feb", 3: "mar", 4: "abr", 5: "may", 6: "jun", 7: "jul", 8: "ago", 9: "sep", 10: "oct", 11: "nov", 12: "dic"}
 
 def init_db():
@@ -57,13 +56,13 @@ def init_db():
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS documentos 
                  (id TEXT PRIMARY KEY, tipo TEXT, numero TEXT, fecha_iso TEXT, 
-                  proveedor TEXT, contenido TEXT, nombre_archivo TEXT, pdf_blob BLOB, paginas_json TEXT)''"):
+                  proveedor TEXT, contenido TEXT, nombre_archivo TEXT, pdf_blob BLOB, paginas_json TEXT)''')
     conn.commit()
     return conn, c
 
 conn, c = init_db()
 
-# --- UTILIDADES ---
+# --- FUNCIONES DE PROCESAMIENTO ---
 
 def resaltar_pdf_multiple(pdf_bytes, queries):
     if not queries: return pdf_bytes
@@ -98,12 +97,6 @@ def abrir_pdf_js(bin_file, page_num=1, btn_id="", label="📄 Ver PDF", color="#
     ">{label}</button>
     """
 
-def formatear_fecha_visual(fecha_iso):
-    try:
-        dt = datetime.strptime(fecha_iso, "%Y-%m-%d")
-        return f"{dt.day}/{MESES_ES[dt.month]}/{dt.year}"
-    except: return fecha_iso
-
 def extraer_fecha_texto(texto):
     texto_limpio = texto.upper()
     patrones = [r'(\d{1,2}[/-]\d{1,2}[/-]\d{4})', r'(\d{4}[/-]\d{1,2}[/-]\d{1,2})', r'(\d{1,2}\s+[A-Z]{3,10}\s+\d{4})']
@@ -111,12 +104,10 @@ def extraer_fecha_texto(texto):
         match = re.search(pat, texto_limpio)
         if match:
             f = match.group(0)
-            # Normalización rápida a ISO
             try:
-                if '-' in f or '/' in f:
-                    parts = re.split(r'[/-]', f)
-                    if len(parts[0]) == 4: return f"{parts[0]}-{int(parts[1]):02d}-{int(parts[2]):02d}"
-                    else: return f"{parts[2]}-{int(parts[1]):02d}-{int(parts[0]):02d}"
+                parts = re.split(r'[/-]', f)
+                if len(parts[0]) == 4: return f"{parts[0]}-{int(parts[1]):02d}-{int(parts[2]):02d}"
+                else: return f"{parts[2]}-{int(parts[1]):02d}-{int(parts[0]):02d}"
             except: pass
     return datetime.now().strftime("%Y-%m-%d")
 
@@ -124,7 +115,6 @@ def generar_zip_blob(resultados, usar_resaltado=False, queries=[]):
     buf = BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         for r in resultados:
-            # r: (id, tipo, num, fecha, nombre, pags, blob)
             nombre = r[4] if r[4].lower().endswith(".pdf") else f"{r[4]}.pdf"
             blob = r[6]
             if usar_resaltado and queries:
@@ -132,21 +122,9 @@ def generar_zip_blob(resultados, usar_resaltado=False, queries=[]):
             zf.writestr(nombre, blob)
     return buf.getvalue()
 
-def generar_zip_categoria(tipo_filtro):
-    c.execute("SELECT nombre_archivo, pdf_blob FROM documentos WHERE tipo=?", (tipo_filtro,))
-    docs = c.fetchall()
-    if not docs: return None
-    buf = BytesIO()
-    with zipfile.ZipFile(buf, "w") as zf:
-        for nombre, blob in docs:
-            fname = nombre if nombre.lower().endswith(".pdf") else f"{nombre}.pdf"
-            zf.writestr(fname, blob)
-    return buf.getvalue()
-
-# --- COMPONENTE DE EDICIÓN Y GESTIÓN ---
+# --- INTERFAZ DE EDICIÓN ---
 
 def render_editor_documento(r, search_terms=[]):
-    # r: (id, tipo, num, fecha_iso, nombre, pags, blob)
     doc_id, tipo, num, fecha_iso, nombre, pags, blob = r
     t1, t2 = st.tabs(["📄 Visualización", "⚙️ Gestión de Datos"])
     
@@ -183,13 +161,12 @@ def render_editor_documento(r, search_terms=[]):
         st.divider()
         cb1, cb2 = st.columns(2)
         
-        # Lógica de eliminación con confirmación
         if f"confirm_del_{doc_id}" not in st.session_state:
             if cb1.button("🗑️ Eliminar Documento", key=f"del_{doc_id}"):
                 st.session_state[f"confirm_del_{doc_id}"] = True
                 st.rerun()
         else:
-            st.error("¿Confirmar eliminación?")
+            st.error("¿Confirmar eliminación definitiva?")
             cc1, cc2 = st.columns(2)
             if cc1.button("✅ Confirmar", key=f"c_ok_{doc_id}"):
                 c.execute("DELETE FROM documentos WHERE id=?", (doc_id,))
@@ -207,16 +184,16 @@ def render_editor_documento(r, search_terms=[]):
             st.success("¡Documento actualizado!")
             st.rerun()
 
-# --- APP ---
+# --- APLICACIÓN PRINCIPAL ---
 
 if 'pendientes' not in st.session_state: st.session_state.pendientes = []
 if 'uploader_id' not in st.session_state: st.session_state.uploader_id = 0
 
 with st.sidebar:
     st.title("🛡️ Cronosol")
-    choice = st.radio("Menú", ["🔍 Buscador", "📂 Documentos", "📤 Carga Masiva"])
+    choice = st.radio("Menú Principal", ["🔍 Buscador", "📂 Documentos", "📤 Carga Masiva"])
     st.divider()
-    st.info("Sistema de Trazabilidad Cronosol")
+    st.info("Sistema de Trazabilidad Aduanera.")
 
 if choice == "📤 Carga Masiva":
     st.header("Carga Masiva de Documentos")
@@ -236,7 +213,7 @@ if choice == "📤 Carga Masiva":
                 })
 
     if st.session_state.pendientes:
-        st.subheader("📋 Revisión de Datos")
+        st.subheader("📋 Revisión antes de guardar")
         if st.button("❌ Cancelar Carga"):
             st.session_state.pendientes = []
             st.session_state.uploader_id += 1
@@ -253,11 +230,11 @@ if choice == "📤 Carga Masiva":
                     new_f = st.date_input(f"Fecha", value=f_val, key=f"f_up_{i}")
                 with c_up2:
                     st.write(f"📄 **{d['nombre']}**")
-                    st.caption(f"Tipo: {d['tipo']}")
+                    st.caption(f"Tipo asignado: {d['tipo']}")
                 docs_finales.append({**d, "fecha": new_f.strftime("%Y-%m-%d")})
                 st.markdown('</div>', unsafe_allow_html=True)
 
-        if st.button("🚀 Guardar en Base de Datos"):
+        if st.button("🚀 Confirmar y Guardar todo"):
             for doc in docs_finales:
                 full_t = ""
                 p_map = {}
@@ -271,7 +248,7 @@ if choice == "📤 Carga Masiva":
                              (doc['id'], doc['tipo'], "GENERAL", doc['fecha'], "PROVEEDOR", full_t, doc['nombre'], doc['blob'], json.dumps(p_map)))
                     conn.commit()
                 except: pass
-            st.success("¡Carga exitosa!")
+            st.success("¡Documentos almacenados correctamente!")
             st.session_state.pendientes = []
             st.session_state.uploader_id += 1
             st.rerun()
@@ -279,8 +256,8 @@ if choice == "📤 Carga Masiva":
 elif choice == "📂 Documentos":
     st.header("Inventario de Documentos")
     col_v1, col_v2 = st.columns(2)
-    f_tipo = col_v1.selectbox("Tipo:", ["Todos", "Factura de Compra", "Manifiesto de Aduana"])
-    f_order = col_v2.selectbox("Orden:", ["Más recientes primero", "Más antiguos primero"])
+    f_tipo = col_v1.selectbox("Filtrar por tipo:", ["Todos", "Factura de Compra", "Manifiesto de Aduana"])
+    f_order = col_v2.selectbox("Ordenar por:", ["Más recientes primero", "Más antiguos primero"])
     
     order_sql = "DESC" if f_order == "Más recientes primero" else "ASC"
     if f_tipo == "Todos":
@@ -290,26 +267,18 @@ elif choice == "📂 Documentos":
     
     docs = c.fetchall()
 
-    st.divider()
-    # Botones de descarga masiva por categoría
-    cz1, cz2 = st.columns(2)
-    zip_f = generar_zip_categoria("Factura de Compra")
-    if zip_f: cz1.download_button("📦 Descargar todas las Facturas (.zip)", zip_f, "facturas.zip")
-    else: cz1.button("📦 Sin Facturas", disabled=True)
-    
-    zip_m = generar_zip_categoria("Manifiesto de Aduana")
-    if zip_m: cz2.download_button("📦 Descargar todos los Manifiestos (.zip)", zip_m, "manifiestos.zip")
-    else: cz2.button("📦 Sin Manifiestos", disabled=True)
-    st.divider()
-
     if docs:
+        st.write(f"Mostrando {len(docs)} documentos.")
         for r in docs:
-            with st.expander(f"{formatear_fecha_visual(r[3])} | {r[1]} - {r[4]}"):
+            fecha_v = datetime.strptime(r[3], "%Y-%m-%d").strftime("%d/%m/%Y")
+            with st.expander(f"{fecha_v} | {r[1]} - {r[4]}"):
                 render_editor_documento(r)
+    else:
+        st.info("No hay documentos registrados aún.")
 
 elif choice == "🔍 Buscador":
-    st.header("Buscador Multitermino")
-    query_in = st.text_input("Referencias o Palabras Clave (sepárelas por coma)").upper()
+    st.header("Buscador Inteligente Multitermino")
+    query_in = st.text_input("Ingrese Referencias (sepárelas por coma)").upper()
     
     if query_in:
         queries = [q.strip() for q in query_in.split(",") if q.strip()]
@@ -323,15 +292,18 @@ elif choice == "🔍 Buscador":
             st.markdown(f'<div class="zip-download-container">', unsafe_allow_html=True)
             st.write(f"📂 **Acciones Masivas para {len(res)} resultados:**")
             cb1, cb2 = st.columns(2)
+            
             zip_res = generar_zip_blob([r[:7] for r in res], True, queries)
             cb1.download_button("📥 Descargar Todos Subrayados (.zip)", zip_res, "busqueda_resaltada.zip")
+            
             zip_orig = generar_zip_blob([r[:7] for r in res], False)
             cb2.download_button("📥 Descargar Todos Originales (.zip)", zip_orig, "busqueda_original.zip")
             st.markdown('</div>', unsafe_allow_html=True)
             
             for r in res:
                 coinciden = [q for q in queries if q in r[7]]
-                with st.expander(f"📄 {formatear_fecha_visual(r[3])} | {r[4]} ({', '.join(coinciden)})"):
+                fecha_v = datetime.strptime(r[3], "%Y-%m-%d").strftime("%d/%m/%Y")
+                with st.expander(f"🔍 {fecha_v} | {r[4]} (Coincide con: {', '.join(coinciden)})"):
                     render_editor_documento(r[:7], queries)
         else:
-            st.warning("No hay coincidencias.")
+            st.warning("No se encontraron coincidencias para los términos ingresados.")
