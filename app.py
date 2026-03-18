@@ -61,10 +61,6 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# Límite de carga de archivos en Streamlit (Configuración de servidor vía código)
-# Nota: En despliegues reales esto suele ir en .streamlit/config.toml
-# pero aquí forzamos la lógica de validación.
-
 # Diccionario para meses cortos y largos
 MESES_ES = {
     1: "ene", 2: "feb", 3: "mar", 4: "abr", 5: "may", 6: "jun",
@@ -238,7 +234,7 @@ if choice == "📤 Carga Masiva":
     
     tipo_doc = st.radio("Tipo de Documento:", ["Factura de Compra", "Manifiesto de Aduana"], horizontal=True)
     
-    # Límite de 50MB
+    # Límite de 50MB (ajustado de 200MB según solicitud)
     MAX_FILE_SIZE = 50 * 1024 * 1024 # 50MB en bytes
 
     archivos = st.file_uploader(
@@ -249,7 +245,7 @@ if choice == "📤 Carga Masiva":
         help="Límite máximo por archivo: 50MB"
     )
 
-    # Validación de tamaño manual por si el CSS o config fallan
+    # Validación de tamaño manual
     if archivos:
         validos = []
         for f in archivos:
