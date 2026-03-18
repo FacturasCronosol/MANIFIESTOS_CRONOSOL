@@ -30,6 +30,9 @@ st.markdown("""
     
     .highlight-page { background-color: #fff3cd; padding: 10px; border-radius: 5px; border-left: 5px solid #ffc107; font-weight: bold; margin-bottom: 10px; color: #856404; }
     .upload-card { border: 1px solid #ddd; padding: 15px; border-radius: 10px; margin-bottom: 15px; background-color: #ffffff; }
+    
+    /* Estilo para los botones de descarga de inventario */
+    .stDownloadButton>button { background-color: #007bff !important; color: white !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -79,13 +82,14 @@ def abrir_pdf_js(bin_file, page_num=1, btn_id="", label="📄 Ver PDF", color="#
     ">{label}</button>
     """
 
-def generar_zip_busqueda(lista_resultados, usar_resaltado=False, queries=[]):
+def generar_zip_blob(lista_resultados, usar_resaltado=False, queries=[]):
     buf = BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         for r in lista_resultados:
-            # Estructura r: (id, tipo, num, fecha, nombre, pags, blob...)
-            nombre = r[4] if r[4].lower().endswith(".pdf") else f"{r[4]}.pdf"
-            blob = r[6]
+            # Estructura r: (id, tipo, num, fecha, proveedor, contenido, nombre, blob, pags)
+            # Dependiendo de la query SQL la posición varía, usamos índices calculados
+            nombre = r[6] if r[6].lower().endswith(".pdf") else f"{r[6]}.pdf"
+            blob = r[7]
             if usar_resaltado and queries:
                 blob = resaltar_pdf_multiple(blob, queries)
             zf.writestr(nombre, blob)
@@ -94,7 +98,8 @@ def generar_zip_busqueda(lista_resultados, usar_resaltado=False, queries=[]):
 # --- COMPONENTES ---
 
 def render_editor_documento(r, search_terms=[]):
-    doc_id, tipo, num, fecha_iso, nombre, pags, blob = r
+    # Estructura r: (id, tipo, num, fecha, proveedor, contenido, nombre, blob, pags)
+    doc_id, tipo, num, fecha_iso, proveedor, contenido, nombre, blob, pags = r
     t1, t2 = st.tabs(["📄 Ver / Resultados", "⚙️ Gestionar Datos"])
     
     with t1:
@@ -121,14 +126,26 @@ def render_editor_documento(r, search_terms=[]):
     with t2:
         col_ed1, col_ed2 = st.columns(2)
         new_tipo = col_ed1.selectbox("Tipo", ["Factura de Compra", "Manifiesto de Aduana"], index=0 if "Factura" in tipo else 1, key=f"edit_t_{doc_id}")
-        new_fecha = col_ed2.text_input("Fecha", value=fecha_iso, key=f"edit_f_{doc_id}")
+        
+        # Selector de fecha real
+        try:
+            curr_date = datetime.strptime(fecha_iso, "%Y-%m-%d")
+        except:
+            curr_date = datetime.now()
+        new_fecha_dt = col_ed2.date_input("Fecha", value=curr_date, key=f"edit_f_{doc_id}")
+        new_fecha = new_fecha_dt.strftime("%Y-%m-%d")
+        
+        col_ed3, col_ed4 = st.columns(2)
+        new_num = col_ed3.text_input("Número de Documento", value=num, key=f"edit_n_{doc_id}")
+        new_prov = col_ed4.text_input("Proveedor", value=proveedor, key=f"edit_p_{doc_id}")
         
         st.divider()
         col_btn1, col_btn2 = st.columns([1, 1])
         if col_btn1.button("💾 Guardar Cambios", key=f"save_{doc_id}"):
-            c.execute("UPDATE documentos SET tipo=?, fecha_iso=? WHERE id=?", (new_tipo, new_fecha, doc_id))
+            c.execute("UPDATE documentos SET tipo=?, fecha_iso=?, numero=?, proveedor=? WHERE id=?", 
+                     (new_tipo, new_fecha, new_num, new_prov, doc_id))
             conn.commit()
-            st.success("Cambios guardados")
+            st.success("Cambios guardados correctamente")
             st.rerun()
         if col_btn2.button("🗑️ Eliminar Documento", key=f"del_{doc_id}"):
             c.execute("DELETE FROM documentos WHERE id=?", (doc_id,))
@@ -143,56 +160,82 @@ with st.sidebar:
 
 if choice == "🔍 Buscador":
     st.header("Buscador Inteligente")
-    query_input = st.text_input("Referencias (sepárelas por coma)").upper()
+    query_input = st.text_input("Referencias o palabras clave (separe por coma)").upper()
     
     if query_input:
         queries = [q.strip() for q in query_input.split(",") if q.strip()]
         sql_cond = " OR ".join(["contenido LIKE ?" for _ in queries])
         params = [f"%{q}%" for q in queries]
         
-        c.execute(f"SELECT id, tipo, numero, fecha_iso, nombre_archivo, paginas_json, pdf_blob, contenido FROM documentos WHERE {sql_cond} ORDER BY fecha_iso DESC", params)
+        # Obtenemos todos los campos para el editor
+        c.execute(f"SELECT id, tipo, numero, fecha_iso, proveedor, contenido, nombre_archivo, pdf_blob, paginas_json FROM documentos WHERE {sql_cond} ORDER BY fecha_iso DESC", params)
         resultados = c.fetchall()
         
         if resultados:
             st.subheader(f"Resultados encontrados: {len(resultados)}")
             
-            # Acciones masivas sin contenedor de fondo blanco
             st.write("📂 **Acciones Masivas para esta búsqueda:**")
             cz1, cz2 = st.columns(2)
             
             with cz1:
-                zip_resaltado = generar_zip_busqueda(resultados, True, queries)
-                st.download_button("📥 Descargar Todos Subrayados (.zip)", zip_resaltado, "busqueda_resaltada.zip", "application/zip", key="dl_zip_res")
+                zip_resaltado = generar_zip_blob(resultados, True, queries)
+                st.download_button("📥 Descargar Resultados Subrayados (.zip)", zip_resaltado, "busqueda_resaltada.zip", "application/zip", key="dl_zip_res")
             
             with cz2:
-                zip_original = generar_zip_busqueda(resultados, False)
-                st.download_button("📥 Descargar Todos Originales (.zip)", zip_original, "busqueda_original.zip", "application/zip", key="dl_zip_orig")
+                zip_original = generar_zip_blob(resultados, False)
+                st.download_button("📥 Descargar Resultados Originales (.zip)", zip_original, "busqueda_original.zip", "application/zip", key="dl_zip_orig")
             
             st.divider()
             
             for r in resultados:
-                coincide = [q for q in queries if q in r[7]]
-                with st.expander(f"📄 {r[3]} | {r[4]} ({', '.join(coincide)})"):
-                    render_editor_documento(r[:7], queries)
+                # r[5] es el contenido para el expander
+                coincide = [q for q in queries if q in r[5]]
+                with st.expander(f"📄 {r[3]} | {r[6]} ({', '.join(coincide)})"):
+                    render_editor_documento(r, queries)
         else:
-            st.warning("No hay coincidencias.")
+            st.warning("No se encontraron coincidencias para los términos ingresados.")
 
 elif choice == "📂 Inventario":
     st.header("Archivo General")
-    c.execute("SELECT id, tipo, numero, fecha_iso, nombre_archivo, paginas_json, pdf_blob FROM documentos ORDER BY fecha_iso DESC")
-    todos = c.fetchall()
-    for r in todos:
-        with st.expander(f"📅 {r[3]} | {r[1]} - {r[4]}"):
-            render_editor_documento(r)
+    
+    col_f1, col_f2 = st.columns(2)
+    with col_f1:
+        st.subheader("📝 Facturas de Compra")
+        c.execute("SELECT id, tipo, numero, fecha_iso, proveedor, contenido, nombre_archivo, pdf_blob, paginas_json FROM documentos WHERE tipo='Factura de Compra' ORDER BY fecha_iso DESC")
+        facturas = c.fetchall()
+        if facturas:
+            zip_f = generar_zip_blob(facturas)
+            st.download_button(f"📥 Descargar {len(facturas)} Facturas (.zip)", zip_f, "todas_las_facturas.zip", key="btn_all_f")
+            for f in facturas:
+                with st.expander(f"📅 {f[3]} | {f[6]}"):
+                    render_editor_documento(f)
+        else: st.info("No hay facturas cargadas.")
+
+    with col_f2:
+        st.subheader("🚢 Manifiestos de Aduana")
+        c.execute("SELECT id, tipo, numero, fecha_iso, proveedor, contenido, nombre_archivo, pdf_blob, paginas_json FROM documentos WHERE tipo='Manifiesto de Aduana' ORDER BY fecha_iso DESC")
+        manifiestos = c.fetchall()
+        if manifiestos:
+            zip_m = generar_zip_blob(manifiestos)
+            st.download_button(f"📥 Descargar {len(manifiestos)} Manifiestos (.zip)", zip_m, "todos_los_manifiestos.zip", key="btn_all_m")
+            for m in manifiestos:
+                with st.expander(f"📅 {m[3]} | {m[6]}"):
+                    render_editor_documento(m)
+        else: st.info("No hay manifiestos cargados.")
 
 elif choice == "📤 Carga":
     st.header("Carga Masiva de Documentos")
     t_doc = st.radio("Tipo de Documento:", ["Factura de Compra", "Manifiesto de Aduana"], horizontal=True)
+    
+    # Se añade el uploader
     f_up = st.file_uploader("Subir archivos PDF", type="pdf", accept_multiple_files=True)
     
     if f_up:
+        st.info(f"Archivos listos para procesar: {len(f_up)}")
+        # Solo se procesa si se hace clic en el botón
         if st.button("⚡ Analizar Documentos"):
-            for f in f_up:
+            progress_bar = st.progress(0)
+            for idx, f in enumerate(f_up):
                 b = f.read()
                 doc_id = hashlib.sha256(b).hexdigest()
                 with fitz.open(stream=b, filetype="pdf") as pdf:
@@ -203,8 +246,11 @@ elif choice == "📤 Carga":
                         full_txt += txt + " "
                         p_map[i+1] = txt
                     try:
+                        # Intentamos insertar valores por defecto que luego se pueden editar
                         c.execute("INSERT INTO documentos VALUES (?,?,?,?,?,?,?,?,?)",
-                                 (doc_id, t_doc, f.name, datetime.now().strftime("%Y-%m-%d"), "PROVEEDOR", full_txt, f.name, b, json.dumps(p_map)))
+                                 (doc_id, t_doc, f.name, datetime.now().strftime("%Y-%m-%d"), "PENDIENTE", full_txt, f.name, b, json.dumps(p_map)))
                         conn.commit()
-                    except: pass
-            st.success("Procesamiento completado e ingresado a la base de datos.")
+                    except sqlite3.IntegrityError:
+                        pass # Ya existe el documento
+                progress_bar.progress((idx + 1) / len(f_up))
+            st.success("Procesamiento completado. Los documentos ya están en el sistema.")
