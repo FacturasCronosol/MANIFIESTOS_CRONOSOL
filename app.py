@@ -373,4 +373,4 @@ elif choice == "🔍 Buscador":
             else:
                 st.error("No se encontraron resultados.")
         except sqlite3.OperationalError as e:
-            st.error(f"Error técnico: {e}")v
+            st.error(f"Error técnico: {e}")
