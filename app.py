@@ -30,15 +30,6 @@ st.markdown("""
     
     .highlight-page { background-color: #fff3cd; padding: 10px; border-radius: 5px; border-left: 5px solid #ffc107; font-weight: bold; margin-bottom: 10px; color: #856404; }
     .upload-card { border: 1px solid #ddd; padding: 15px; border-radius: 10px; margin-bottom: 15px; background-color: #ffffff; }
-    
-    /* Contenedor de acciones masivas */
-    .mass-actions-box {
-        background-color: #f1f3f5;
-        padding: 15px;
-        border-radius: 10px;
-        border: 1px dashed #ced4da;
-        margin: 10px 0 25px 0;
-    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -165,8 +156,7 @@ if choice == "🔍 Buscador":
         if resultados:
             st.subheader(f"Resultados encontrados: {len(resultados)}")
             
-            # Contenedor limpio de acciones masivas
-            st.markdown('<div class="mass-actions-box">', unsafe_allow_html=True)
+            # Acciones masivas sin contenedor de fondo blanco
             st.write("📂 **Acciones Masivas para esta búsqueda:**")
             cz1, cz2 = st.columns(2)
             
@@ -177,7 +167,8 @@ if choice == "🔍 Buscador":
             with cz2:
                 zip_original = generar_zip_busqueda(resultados, False)
                 st.download_button("📥 Descargar Todos Originales (.zip)", zip_original, "busqueda_original.zip", "application/zip", key="dl_zip_orig")
-            st.markdown('</div>', unsafe_allow_html=True)
+            
+            st.divider()
             
             for r in resultados:
                 coincide = [q for q in queries if q in r[7]]
