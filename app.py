@@ -47,6 +47,16 @@ st.markdown("""
         border: 1px solid #e9ecef;
         margin-bottom: 25px;
     }
+    .sidebar-logo {
+        display: flex;
+        justify-content: center;
+        margin-bottom: 20px;
+    }
+    .sidebar-logo img {
+        max-width: 150px;
+        max-height: 150px;
+        border-radius: 10px;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -54,13 +64,27 @@ st.markdown("""
 def init_db():
     conn = sqlite3.connect('gestion_cronosol_v4.db', check_same_thread=False)
     c = conn.cursor()
+    # Tabla de documentos (Existente)
     c.execute('''CREATE TABLE IF NOT EXISTS documentos 
                  (id TEXT PRIMARY KEY, tipo TEXT, numero TEXT, fecha_iso TEXT, 
-                  proveedor TEXT, contenido TEXT, nombre_archivo TEXT, pdf_blob BLOB, paginas_json TEXT)''')
+                 proveedor TEXT, contenido TEXT, nombre_archivo TEXT, pdf_blob BLOB, paginas_json TEXT)''')
+    # Tabla de configuración (Nueva)
+    c.execute('''CREATE TABLE IF NOT EXISTS configuracion
+                 (id INTEGER PRIMARY KEY, nombre_empresa TEXT, logo_b64 TEXT)''')
     conn.commit()
     return conn, c
 
 conn, c = init_db()
+
+# --- FUNCIONES DE CONFIGURACIÓN ---
+def obtener_configuracion():
+    c.execute("SELECT nombre_empresa, logo_b64 FROM configuracion WHERE id=1")
+    res = c.fetchone()
+    if res:
+        return {"nombre": res[0], "logo": res[1]}
+    return {"nombre": "Cronosol", "logo": None}
+
+config = obtener_configuracion()
 
 # --- FUNCIONES DE PROCESAMIENTO ---
 
@@ -115,7 +139,6 @@ def generar_zip_blob(resultados, usar_resaltado=False, queries=[]):
     buf = BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         for r in resultados:
-            # r[4] es nombre_archivo, r[6] es pdf_blob
             nombre = r[4] if r[4].lower().endswith(".pdf") else f"{r[4]}.pdf"
             blob = r[6]
             if usar_resaltado and queries:
@@ -143,7 +166,6 @@ def render_editor_documento(r, search_terms=[], es_inventario=False):
         p_ini = min(p_encontradas) if p_encontradas else 1
         
         if not es_inventario and search_terms:
-            # En Buscador: Mostrar ambos
             c1, c2 = st.columns(2)
             with c1:
                 pdf_resaltado = resaltar_pdf_multiple(blob, search_terms)
@@ -151,7 +173,6 @@ def render_editor_documento(r, search_terms=[], es_inventario=False):
             with c2:
                 st.components.v1.html(abrir_pdf_js(blob, p_ini, f"orig_{doc_id}", "Ver PDF Original", "#6c757d"), height=65)
         else:
-            # En Inventario: Solo Original
             st.components.v1.html(abrir_pdf_js(blob, p_ini, f"orig_{doc_id}", "Ver PDF Original", "#007bff"), height=65)
 
     with t2:
@@ -195,12 +216,35 @@ if 'pendientes' not in st.session_state: st.session_state.pendientes = []
 if 'uploader_id' not in st.session_state: st.session_state.uploader_id = 0
 
 with st.sidebar:
-    st.title("🛡️ Cronosol")
-    choice = st.radio("Menú Principal", ["🔍 Buscador", "📂 Documentos", "📤 Carga Masiva"])
+    # Mostrar Logo Dinámico
+    if config["logo"]:
+        st.markdown(f'<div class="sidebar-logo"><img src="data:image/png;base64,{config["logo"]}"></div>', unsafe_allow_html=True)
+    
+    st.title(f"🛡️ {config['nombre']}")
+    choice = st.radio("Menú Principal", ["🔍 Buscador", "📂 Documentos", "📤 Carga Masiva", "⚙️ Configuración"])
     st.divider()
     st.info("Sistema de Trazabilidad Aduanera.")
 
-if choice == "📤 Carga Masiva":
+if choice == "⚙️ Configuración":
+    st.header("Información de la Empresa")
+    st.write("Personaliza el nombre y el logo que aparece en el sistema.")
+    
+    with st.form("form_config"):
+        nuevo_nombre = st.text_input("Nombre de la Empresa", value=config["nombre"])
+        nuevo_logo = st.file_uploader("Subir Logo (PNG/JPG)", type=["png", "jpg", "jpeg"])
+        
+        if st.form_submit_button("💾 Guardar Configuración"):
+            logo_b64 = config["logo"]
+            if nuevo_logo:
+                logo_b64 = base64.b64encode(nuevo_logo.read()).decode()
+            
+            c.execute("INSERT OR REPLACE INTO configuracion (id, nombre_empresa, logo_b64) VALUES (1, ?, ?)",
+                     (nuevo_nombre, logo_b64))
+            conn.commit()
+            st.success("Configuración guardada. Recargando...")
+            st.rerun()
+
+elif choice == "📤 Carga Masiva":
     st.header("Carga Masiva de Documentos")
     tipo_up = st.radio("Tipo de Documento:", ["Factura de Compra", "Manifiesto de Aduana"], horizontal=True)
     archivos = st.file_uploader("Subir archivos PDF", type="pdf", accept_multiple_files=True, key=f"up_{st.session_state.uploader_id}")
@@ -215,8 +259,7 @@ if choice == "📤 Carga Masiva":
                 for page in pdf:
                     full_text += page.get_text()
                 
-                # Validación de OCR
-                tiene_ocr = len(full_text.strip()) > 5 # Umbral mínimo de texto
+                tiene_ocr = len(full_text.strip()) > 5
                 
                 st.session_state.pendientes.append({
                     "id": doc_id, 
@@ -300,7 +343,6 @@ elif choice == "📂 Documentos":
     docs = c.fetchall()
 
     if docs:
-        # Botones de descarga masiva en Inventario
         st.markdown('<div class="zip-download-container">', unsafe_allow_html=True)
         label_zip = f"Descargar {f_tipo}" if f_tipo != "Todos" else "Descargar Todo el Inventario"
         zip_data = generar_zip_blob(docs)
@@ -316,7 +358,14 @@ elif choice == "📂 Documentos":
         st.info("No hay documentos registrados aún en esta categoría.")
 
 elif choice == "🔍 Buscador":
-    st.header("Buscador Inteligente Multitermino")
+    # Logo en el Buscador
+    c_logo1, c_logo2 = st.columns([1, 4])
+    with c_logo1:
+        if config["logo"]:
+            st.image(f"data:image/png;base64,{config['logo']}", width=100)
+    with c_logo2:
+        st.header(f"Buscador Inteligente - {config['nombre']}")
+    
     query_in = st.text_input("Ingrese Referencias (sepárelas por coma)").upper()
     
     if query_in:
@@ -332,7 +381,6 @@ elif choice == "🔍 Buscador":
             st.write(f"📂 **Acciones Masivas para {len(res)} resultados:**")
             cb1, cb2 = st.columns(2)
             
-            # Aquí sí se permite resaltado
             zip_res = generar_zip_blob([r[:7] for r in res], True, queries)
             cb1.download_button("📥 Descargar Resultados Subrayados (.zip)", zip_res, "busqueda_resaltada.zip")
             
