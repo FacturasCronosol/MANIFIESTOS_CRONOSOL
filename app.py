@@ -105,7 +105,9 @@ def normalizar_fecha_a_iso(texto_fecha):
     if not texto_fecha:
         return datetime.now().strftime("%Y-%m-%d")
     
+    # Limpieza profunda de caracteres no deseados
     texto_fecha = texto_fecha.upper().replace("DE ", " ").replace(".", "").replace(",", "").strip()
+    texto_fecha = re.sub(r'[^A-Z0-9/\-\s]', '', texto_fecha) # Solo dejamos letras, números y separadores
     texto_fecha = re.sub(r'\s+', ' ', texto_fecha)
     
     # Intento 1: Formatos numéricos (DD/MM/AAAA o AAAA/MM/DD)
@@ -135,23 +137,37 @@ def normalizar_fecha_a_iso(texto_fecha):
     return datetime.now().strftime("%Y-%m-%d")
 
 def extraer_fecha_texto(texto):
-    # Ampliamos el rango de búsqueda para capturar fechas en líneas siguientes o con formatos variados
     texto_limpio = texto.upper()
-    palabras_clave = [r'FECHA EMISION', r'FECHA DE EMISIÓN', r'FECHA DE FACTURA', r'FECHA DOCUMENTO', r'FECHA:']
+    
+    # Intento 1: Buscar etiquetas específicas (Facturas y Manifiestos)
+    palabras_clave = [
+        r'FECHA EMISION', r'FECHA DE EMISIÓN', r'FECHA DE FACTURA', 
+        r'FECHA DOCUMENTO', r'FECHA EXPEDICION', r'FECHA:', r'F\. EMISION'
+    ]
     
     for p in palabras_clave:
-        # Buscamos la etiqueta y capturamos hasta 30 caracteres después (incluyendo saltos de línea)
         match = re.search(f'{p}\s*[:\-]?\s*(.{{1,30}})', texto_limpio, re.DOTALL)
         if match:
             posible_fecha = match.group(1).strip()
-            # Intentamos extraer una estructura de fecha de ese bloque
-            formato_num = re.search(r'(\d{1,2}[/-]\d{1,2}[/-]\d{4})|(\d{4}[/-]\d{1,2}[/-]\d{1,2})', posible_fecha)
-            if formato_num:
-                return normalizar_fecha_a_iso(formato_num.group(0))
+            # Buscar estructura de fecha dentro del pedazo encontrado
+            f_num = re.search(r'(\d{1,2}[/-]\d{1,2}[/-]\d{4})|(\d{4}[/-]\d{1,2}[/-]\d{1,2})', posible_fecha)
+            if f_num: return normalizar_fecha_a_iso(f_num.group(0))
             
-            formato_texto = re.search(r'(\d{1,2}\s+[A-Z]{3,10}\s+\d{4})', posible_fecha)
-            if formato_texto:
-                return normalizar_fecha_a_iso(formato_texto.group(0))
+            f_txt = re.search(r'(\d{1,2}\s+[A-Z]{3,10}\s+\d{4})', posible_fecha)
+            if f_txt: return normalizar_fecha_a_iso(f_txt.group(0))
+
+    # Intento 2: Búsqueda global (Si no hay etiqueta, buscamos cualquier fecha en el texto)
+    # Esto ayuda cuando el OCR no agrupa bien la etiqueta con el valor
+    patrones_globales = [
+        r'(\d{1,2}[/-]\d{1,2}[/-]\d{4})',  # DD/MM/AAAA
+        r'(\d{4}[/-]\d{1,2}[/-]\d{1,2})',  # AAAA/MM/DD
+        r'(\d{1,2}\s+[A-Z]{3,10}\s+\d{4})' # DD MES AAAA
+    ]
+    
+    for pat in patrones_globales:
+        match_global = re.search(pat, texto_limpio)
+        if match_global:
+            return normalizar_fecha_a_iso(match_global.group(0))
                 
     return datetime.now().strftime("%Y-%m-%d")
 
