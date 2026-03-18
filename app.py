@@ -329,14 +329,21 @@ elif choice == "🔍 Buscador":
         sql_conditions = " OR ".join(["contenido LIKE ?" for _ in queries])
         sql_params = [f"%{q}%" for q in queries]
         
-        c.execute(f"SELECT id, tipo, numero, fecha_iso, nombre_archivo, paginas_json, pdf_blob FROM documentos WHERE {sql_conditions} ORDER BY fecha_iso DESC", sql_params)
+        c.execute(f"SELECT id, tipo, numero, fecha_iso, nombre_archivo, paginas_json, pdf_blob, contenido FROM documentos WHERE {sql_conditions} ORDER BY fecha_iso DESC", sql_params)
         res = c.fetchall()
         
         if res:
             st.write(f"Resultados encontrados: **{len(res)}**")
             for r in res:
-                doc_id, tipo, num, fecha_iso, nombre, pags, blob = r
-                with st.expander(f"🔍 {formatear_fecha_visual(fecha_iso)} | {tipo} - {nombre}"):
-                    render_editor_documento(r)
+                doc_id, tipo, num, fecha_iso, nombre, pags, blob, contenido = r
+                
+                # Detectar cuáles de las queries están presentes en este documento específico
+                coincidencias = [q for q in queries if q in contenido]
+                str_coincidencias = f"({', '.join(coincidencias)})" if coincidencias else ""
+                
+                # Mostrar el expander con las coincidencias en el título
+                with st.expander(f"🔍 {formatear_fecha_visual(fecha_iso)} | {tipo} - {nombre} {str_coincidencias}"):
+                    # Pasamos solo los primeros 7 elementos de r para que coincida con la firma de render_editor_documento
+                    render_editor_documento(r[:7])
         else:
             st.warning("No se encontraron coincidencias para los términos ingresados.")
