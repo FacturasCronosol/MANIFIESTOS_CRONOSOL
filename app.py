@@ -29,6 +29,7 @@ st.markdown("""
     .highlight-page { background-color: #fff3cd; padding: 5px; border-radius: 5px; border-left: 5px solid #ffc107; font-weight: bold; margin-bottom: 10px; }
     .upload-card { border: 1px solid #ddd; padding: 15px; border-radius: 10px; margin-bottom: 15px; background-color: #ffffff; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
     .ocr-warning { background-color: #f8d7da; color: #721c24; padding: 10px; border-radius: 5px; border-left: 5px solid #dc3545; font-weight: bold; margin-top: 5px; }
+    .cancel-btn button { background-color: #6c757d !important; color: white !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -156,8 +157,7 @@ def extraer_fecha_texto(texto):
             f_txt = re.search(r'(\d{1,2}\s+[A-Z]{3,10}\s+\d{4})', posible_fecha)
             if f_txt: return normalizar_fecha_a_iso(f_txt.group(0))
 
-    # Intento 2: Búsqueda global (Si no hay etiqueta, buscamos cualquier fecha en el texto)
-    # Esto ayuda cuando el OCR no agrupa bien la etiqueta con el valor
+    # Intento 2: Búsqueda global
     patrones_globales = [
         r'(\d{1,2}[/-]\d{1,2}[/-]\d{4})',  # DD/MM/AAAA
         r'(\d{4}[/-]\d{1,2}[/-]\d{1,2})',  # AAAA/MM/DD
@@ -195,6 +195,9 @@ def abrir_pdf_js(bin_file, page_num=1):
     return js
 
 # --- INTERFAZ ---
+if 'pendientes' not in st.session_state:
+    st.session_state.pendientes = []
+
 with st.sidebar:
     st.title("🛡️ Cronosol")
     choice = st.radio("Menú", ["🔍 Buscador", "📤 Carga Masiva"])
@@ -203,12 +206,20 @@ with st.sidebar:
 
 if choice == "📤 Carga Masiva":
     st.header("Carga Masiva de Documentos")
+    
+    # Si el usuario limpia el uploader de archivos, borramos pendientes inmediatamente
     tipo_doc = st.radio("Tipo de Documento:", ["Factura de Compra", "Manifiesto de Aduana"], horizontal=True)
-    archivos = st.file_uploader("Subir archivos PDF", type="pdf", accept_multiple_files=True)
+    archivos = st.file_uploader("Subir archivos PDF", type="pdf", accept_multiple_files=True, key="uploader_masivo")
+
+    # Si no hay archivos en el uploader pero hay pendientes, limpiar (se presionó la X del uploader)
+    if not archivos and st.session_state.pendientes:
+        st.session_state.pendientes = []
+        st.rerun()
 
     if archivos:
+        # Solo mostrar el botón de analizar si no hemos analizado estos archivos aún
         if st.button("⚡ Analizar Documentos"):
-            st.session_state.pendientes = []
+            st.session_state.pendientes = [] # Reinicio preventivo
             for f in archivos:
                 f.seek(0)
                 pdf_bytes = f.read()
@@ -216,7 +227,6 @@ if choice == "📤 Carga Masiva":
                 with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
                     if len(doc) > 0:
                         raw_text = doc[0].get_text()
-                        # Validación de OCR: Si tiene muy poco texto, advertimos
                         tiene_ocr = len(raw_text.strip()) > 50
                         fecha_iso = extraer_fecha_texto(raw_text)
                         st.session_state.pendientes.append({
@@ -225,8 +235,16 @@ if choice == "📤 Carga Masiva":
                             "ocr_warning": not tiene_ocr
                         })
 
-        if 'pendientes' in st.session_state and st.session_state.pendientes:
+        if st.session_state.pendientes:
             st.subheader("📋 Revisión de Datos")
+            
+            # Botón para cancelar todo
+            st.markdown('<div class="cancel-btn">', unsafe_allow_html=True)
+            if st.button("❌ Cancelar y Limpiar Carga"):
+                st.session_state.pendientes = []
+                st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
+            
             documentos_finales = []
             for i, d in enumerate(st.session_state.pendientes):
                 with st.container():
@@ -262,11 +280,17 @@ if choice == "📤 Carga Masiva":
                     except sqlite3.IntegrityError:
                         pass
                     bar.progress((idx + 1) / len(documentos_finales))
+                
+                # Limpieza TOTAL después de guardar
                 st.success("¡Documentos indexados correctamente!")
                 st.session_state.pendientes = []
                 st.rerun()
 
 elif choice == "🔍 Buscador":
+    # Al cambiar de pestaña, también es buena idea limpiar pendientes por seguridad
+    if st.session_state.pendientes:
+        st.session_state.pendientes = []
+        
     st.header("Buscador de Trazabilidad")
     query = st.text_input("Ingrese Referencia, Contenedor o Palabra Clave").upper()
 
@@ -320,7 +344,6 @@ elif choice == "🔍 Buscador":
                                 st.success("¡Datos actualizados!")
                                 st.rerun()
                             
-                            # Lógica de eliminación con confirmación
                             if f"confirm_del_{doc_id}" not in st.session_state:
                                 if col_btn2.button("🗑️ Eliminar Documento", key=f"del_{doc_id}"):
                                     st.session_state[f"confirm_del_{doc_id}"] = True
