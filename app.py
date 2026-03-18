@@ -83,20 +83,22 @@ def eliminar_documento(doc_id):
     c.execute("DELETE FROM documentos WHERE id=?", (doc_id,))
     conn.commit()
 
-def resaltar_pdf(pdf_bytes, query):
-    if not query:
+def resaltar_pdf_multiple(pdf_bytes, queries):
+    if not queries:
         return pdf_bytes
     try:
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
         for page in doc:
-            text_instances = page.search_for(query)
-            for inst in text_instances:
-                annot = page.add_highlight_annot(inst)
-                annot.update()
+            for q in queries:
+                if q.strip():
+                    text_instances = page.search_for(q.strip())
+                    for inst in text_instances:
+                        annot = page.add_highlight_annot(inst)
+                        annot.update()
         output_bytes = doc.write()
         doc.close()
         return output_bytes
-    except Exception as e:
+    except Exception:
         return pdf_bytes
 
 def formatear_fecha_visual(fecha_iso):
@@ -148,11 +150,11 @@ def extraer_fecha_texto(texto):
             return normalizar_fecha_a_iso(match.group(0))
     return datetime.now().strftime("%Y-%m-%d")
 
-def abrir_pdf_js(bin_file, page_num=1):
+def abrir_pdf_js(bin_file, page_num=1, btn_id=""):
     base64_pdf = base64.b64encode(bin_file).decode('utf-8')
     js = f"""
     <script>
-    function openPDF() {{
+    function openPDF_{btn_id}() {{
         const byteCharacters = atob("{base64_pdf}");
         const byteNumbers = new Array(byteCharacters.length);
         for (let i = 0; i < byteCharacters.length; i++) {{ byteNumbers[i] = byteCharacters.charCodeAt(i); }}
@@ -162,18 +164,74 @@ def abrir_pdf_js(bin_file, page_num=1):
         window.open(fileURL + '#page={page_num}', '_blank');
     }}
     </script>
-    <button onclick="openPDF()" style="
+    <button onclick="openPDF_{btn_id}()" style="
         width: 100%; padding: 0.75em 1.5em; background-color: #28a745; color: white;
         border: none; border-radius: 8px; font-weight: bold; cursor: pointer;
     ">📄 Ver PDF Resaltado (Pág. {page_num})</button>
     """
     return js
 
+# --- COMPONENTE DE EDICIÓN (REUTILIZABLE) ---
+def render_editor_documento(r):
+    doc_id, tipo, num, fecha_iso, nombre, pags, blob = r
+    tab1, tab2 = st.tabs(["📄 Ver / Resultados", "⚙️ Gestionar Datos"])
+    
+    with tab1:
+        # Lógica de resaltado (soporta múltiples queries si vienen del buscador)
+        search_terms = st.session_state.get('last_queries', [])
+        p_dict = json.loads(pags)
+        
+        paginas_encontradas = []
+        if search_terms:
+            for p, cont in p_dict.items():
+                if any(q.strip() in cont for q in search_terms if q.strip()):
+                    paginas_encontradas.append(p)
+        
+        if paginas_encontradas:
+            st.markdown(f'<div class="highlight-page">📍 Términos encontrados en pág: {", ".join(map(str, sorted(list(set(paginas_encontradas)))))}</div>', unsafe_allow_html=True)
+        
+        pdf_final = resaltar_pdf_multiple(blob, search_terms)
+        p_inicial = paginas_encontradas[0] if paginas_encontradas else 1
+        
+        st.components.v1.html(abrir_pdf_js(pdf_final, p_inicial, btn_id=doc_id), height=70)
+        st.download_button("💾 Descargar PDF", pdf_final, f"DOC_{nombre}", "application/pdf", key=f"dl_{doc_id}")
+
+    with tab2:
+        edit_nombre = st.text_input("Nombre del archivo", value=nombre, key=f"n_{doc_id}")
+        c_e1, c_e2 = st.columns(2)
+        edit_tipo = c_e1.selectbox("Tipo de Documento", ["Factura de Compra", "Manifiesto de Aduana"], index=0 if tipo=="Factura de Compra" else 1, key=f"t_{doc_id}")
+        try: f_edit_dt = datetime.strptime(fecha_iso, "%Y-%m-%d").date()
+        except: f_edit_dt = datetime.now().date()
+        edit_fecha = c_e2.date_input("Fecha", value=f_edit_dt, key=f"f_edit_{doc_id}")
+        
+        st.divider()
+        col_btn_del, col_btn_save = st.columns(2)
+        
+        if f"confirm_del_{doc_id}" not in st.session_state:
+            if col_btn_del.button("🗑️ Eliminar Documento", key=f"del_{doc_id}"):
+                st.session_state[f"confirm_del_{doc_id}"] = True
+                st.rerun()
+        else:
+            st.error("¿Confirmar eliminación definitiva?")
+            if col_btn_del.button("✅ Confirmar", key=f"confirm_del_btn_{doc_id}"):
+                eliminar_documento(doc_id)
+                st.rerun()
+            if st.button("❌ Cancelar", key=f"cancel_del_{doc_id}"):
+                del st.session_state[f"confirm_del_{doc_id}"]
+                st.rerun()
+
+        if col_btn_save.button("💾 Guardar Cambios", key=f"save_{doc_id}"):
+            actualizar_documento(doc_id, edit_tipo, edit_nombre, edit_fecha.strftime("%Y-%m-%d"))
+            st.success("¡Documento actualizado!")
+            st.rerun()
+
 # --- INTERFAZ ---
 if 'pendientes' not in st.session_state:
     st.session_state.pendientes = []
 if 'uploader_id' not in st.session_state:
     st.session_state.uploader_id = 0
+if 'last_queries' not in st.session_state:
+    st.session_state.last_queries = []
 
 def limpiar_carga_total():
     st.session_state.pendientes = []
@@ -181,7 +239,9 @@ def limpiar_carga_total():
 
 with st.sidebar:
     st.title("🛡️ Cronosol")
-    choice = st.radio("Menú", ["🔍 Buscador", "📤 Carga Masiva"])
+    choice = st.radio("Menú", ["🔍 Buscador", "📂 Documentos", "📤 Carga Masiva"])
+    st.divider()
+    st.info("Sistema de Trazabilidad Aduanera.")
 
 if choice == "📤 Carga Masiva":
     st.header("Carga Masiva de Documentos")
@@ -241,50 +301,42 @@ if choice == "📤 Carga Masiva":
                 limpiar_carga_total()
                 st.rerun()
 
-elif choice == "🔍 Buscador":
-    st.header("Buscador de Trazabilidad")
-    query = st.text_input("Ingrese Referencia o Palabra Clave").upper()
+elif choice == "📂 Documentos":
+    st.header("Inventario de Documentos")
+    c.execute("SELECT id, tipo, numero, fecha_iso, nombre_archivo, paginas_json, pdf_blob FROM documentos ORDER BY fecha_iso DESC")
+    todos = c.fetchall()
+    
+    if todos:
+        st.write(f"Total de documentos en sistema: **{len(todos)}**")
+        st.session_state.last_queries = [] # No resaltar nada por defecto en esta pestaña
+        for r in todos:
+            with st.expander(f"{formatear_fecha_visual(r[3])} | {r[1]} - {r[4]}"):
+                render_editor_documento(r)
+    else:
+        st.info("No hay documentos cargados todavía.")
 
-    if query:
-        c.execute("SELECT id, tipo, numero, fecha_iso, nombre_archivo, paginas_json, pdf_blob FROM documentos WHERE contenido LIKE ? ORDER BY fecha_iso DESC", (f'%{query}%',))
+elif choice == "🔍 Buscador":
+    st.header("Buscador Multitermino")
+    st.info("💡 Puedes buscar varias referencias separadas por coma. Ejemplo: `REF123, REF456, CONTENEDOR789`")
+    raw_query = st.text_input("Ingrese Referencias o Palabras Clave").upper()
+
+    if raw_query:
+        # Separar por comas y limpiar espacios
+        queries = [q.strip() for q in raw_query.split(",") if q.strip()]
+        st.session_state.last_queries = queries
+        
+        # Construir consulta SQL dinámica para buscar cualquiera de los términos
+        sql_conditions = " OR ".join(["contenido LIKE ?" for _ in queries])
+        sql_params = [f"%{q}%" for q in queries]
+        
+        c.execute(f"SELECT id, tipo, numero, fecha_iso, nombre_archivo, paginas_json, pdf_blob FROM documentos WHERE {sql_conditions} ORDER BY fecha_iso DESC", sql_params)
         res = c.fetchall()
+        
         if res:
+            st.write(f"Resultados encontrados: **{len(res)}**")
             for r in res:
                 doc_id, tipo, num, fecha_iso, nombre, pags, blob = r
-                with st.expander(f"{formatear_fecha_visual(fecha_iso)} | {tipo} - {nombre}"):
-                    tab1, tab2 = st.tabs(["📄 Ver", "⚙️ Gestionar"])
-                    with tab1:
-                        p_dict = json.loads(pags)
-                        encontrado = [p for p, cont in p_dict.items() if query in cont]
-                        if encontrado: st.info(f"📍 Encontrado en pág: {', '.join(map(str, encontrado))}")
-                        st.components.v1.html(abrir_pdf_js(resaltar_pdf(blob, query), encontrado[0] if encontrado else 1), height=70)
-                    with tab2:
-                        edit_nombre = st.text_input("Nombre", value=nombre, key=f"n_{doc_id}")
-                        c_e1, c_e2 = st.columns(2)
-                        edit_tipo = c_e1.selectbox("Tipo", ["Factura de Compra", "Manifiesto de Aduana"], index=0 if tipo=="Factura de Compra" else 1, key=f"t_{doc_id}")
-                        try: f_edit_dt = datetime.strptime(fecha_iso, "%Y-%m-%d").date()
-                        except: f_edit_dt = datetime.now().date()
-                        edit_fecha = c_e2.date_input("Fecha", value=f_edit_dt, key=f"f_edit_{doc_id}")
-                        
-                        st.divider()
-                        # Columnas invertidas: Eliminar (izquierda) | Guardar (derecha)
-                        col_btn_del, col_btn_save = st.columns(2)
-                        
-                        # Lógica de eliminación a la izquierda
-                        if f"confirm_del_{doc_id}" not in st.session_state:
-                            if col_btn_del.button("🗑️ Eliminar Documento", key=f"del_{doc_id}"):
-                                st.session_state[f"confirm_del_{doc_id}"] = True
-                                st.rerun()
-                        else:
-                            st.error("¿Confirmar eliminación?")
-                            if col_btn_del.button("✅ Confirmar", key=f"confirm_del_btn_{doc_id}"):
-                                eliminar_documento(doc_id)
-                                st.rerun()
-
-                        # Lógica de guardado a la derecha
-                        if col_btn_save.button("💾 Guardar Cambios", key=f"save_{doc_id}"):
-                            actualizar_documento(doc_id, edit_tipo, edit_nombre, edit_fecha.strftime("%Y-%m-%d"))
-                            st.success("¡Actualizado!")
-                            st.rerun()
+                with st.expander(f"🔍 {formatear_fecha_visual(fecha_iso)} | {tipo} - {nombre}"):
+                    render_editor_documento(r)
         else:
-            st.warning("Sin resultados.")
+            st.warning("No se encontraron coincidencias para los términos ingresados.")
