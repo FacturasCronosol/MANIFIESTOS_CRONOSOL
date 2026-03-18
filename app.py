@@ -7,6 +7,8 @@ import base64
 import json
 import re
 import os
+import zipfile
+from io import BytesIO
 from datetime import datetime
 
 # Configuración profesional
@@ -42,6 +44,9 @@ st.markdown("""
     .upload-card { border: 1px solid #ddd; padding: 15px; border-radius: 10px; margin-bottom: 15px; background-color: #ffffff; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
     .ocr-warning { background-color: #f8d7da; color: #721c24; padding: 10px; border-radius: 5px; border-left: 5px solid #dc3545; font-weight: bold; margin-top: 5px; }
     .cancel-btn button { background-color: #6c757d !important; color: white !important; }
+    
+    /* Estilo para los botones de descarga ZIP */
+    .zip-btn button { background-color: #6f42c1 !important; color: white !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -171,6 +176,23 @@ def abrir_pdf_js(bin_file, page_num=1, btn_id=""):
     """
     return js
 
+def generar_zip_documentos(tipo_filtro):
+    # Obtener documentos de la DB según el tipo
+    c.execute("SELECT nombre_archivo, pdf_blob FROM documentos WHERE tipo=?", (tipo_filtro,))
+    docs = c.fetchall()
+    
+    if not docs:
+        return None
+    
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        for nombre, blob in docs:
+            # Aseguramos que el nombre termine en .pdf
+            fname = nombre if nombre.lower().endswith(".pdf") else f"{nombre}.pdf"
+            zf.writestr(fname, blob)
+    
+    return buf.getvalue()
+
 # --- COMPONENTE DE EDICIÓN (REUTILIZABLE) ---
 def render_editor_documento(r):
     doc_id, tipo, num, fecha_iso, nombre, pags, blob = r
@@ -202,7 +224,7 @@ def render_editor_documento(r):
         edit_tipo = c_e1.selectbox("Tipo de Documento", ["Factura de Compra", "Manifiesto de Aduana"], index=0 if tipo=="Factura de Compra" else 1, key=f"t_{doc_id}")
         try: f_edit_dt = datetime.strptime(fecha_iso, "%Y-%m-%d").date()
         except: f_edit_dt = datetime.now().date()
-        edit_fecha = c_e2.date_input("Fecha", value=f_edit_dt, key=f"f_edit_{doc_id}")
+        edit_fecha = c_e2.date_input("Fecha", value=f_edit_dt, key=f_edit_doc_id if 'f_edit_doc_id' in locals() else f"f_edit_ui_{doc_id}")
         
         st.divider()
         col_btn_del, col_btn_save = st.columns(2)
@@ -303,17 +325,66 @@ if choice == "📤 Carga Masiva":
 
 elif choice == "📂 Documentos":
     st.header("Inventario de Documentos")
-    c.execute("SELECT id, tipo, numero, fecha_iso, nombre_archivo, paginas_json, pdf_blob FROM documentos ORDER BY fecha_iso DESC")
-    todos = c.fetchall()
     
+    # --- FILTROS DE VISTA ---
+    with st.container():
+        f1, f2, f3 = st.columns([2, 2, 2])
+        filtro_tipo = f1.selectbox("Filtrar por tipo:", ["Todos", "Factura de Compra", "Manifiesto de Aduana"])
+        filtro_orden = f2.selectbox("Ordenar por fecha:", ["Más recientes primero", "Más antiguos primero"])
+        
+        # Lógica de SQL según filtros
+        order_sql = "DESC" if filtro_orden == "Más recientes primero" else "ASC"
+        if filtro_tipo == "Todos":
+            query_sql = f"SELECT id, tipo, numero, fecha_iso, nombre_archivo, paginas_json, pdf_blob FROM documentos ORDER BY fecha_iso {order_sql}"
+            params = ()
+        else:
+            query_sql = f"SELECT id, tipo, numero, fecha_iso, nombre_archivo, paginas_json, pdf_blob FROM documentos WHERE tipo=? ORDER BY fecha_iso {order_sql}"
+            params = (filtro_tipo,)
+            
+        c.execute(query_sql, params)
+        todos = c.fetchall()
+    
+    st.divider()
+    
+    # --- BOTONES DE DESCARGA MASIVA ---
+    col_zip1, col_zip2 = st.columns(2)
+    
+    # Descargar Facturas
+    zip_facturas = generar_zip_documentos("Factura de Compra")
+    if zip_facturas:
+        col_zip1.download_button(
+            label="📦 Descargar todas las Facturas (.zip)",
+            data=zip_facturas,
+            file_name=f"Facturas_Cronosol_{datetime.now().strftime('%Y%m%d')}.zip",
+            mime="application/zip",
+            key="btn_zip_facturas"
+        )
+    else:
+        col_zip1.button("📦 Sin Facturas para descargar", disabled=True)
+        
+    # Descargar Manifiestos
+    zip_manifiestos = generar_zip_documentos("Manifiesto de Aduana")
+    if zip_manifiestos:
+        col_zip2.download_button(
+            label="📦 Descargar todos los Manifiestos (.zip)",
+            data=zip_manifiestos,
+            file_name=f"Manifiestos_Cronosol_{datetime.now().strftime('%Y%m%d')}.zip",
+            mime="application/zip",
+            key="btn_zip_manifiestos"
+        )
+    else:
+        col_zip2.button("📦 Sin Manifiestos para descargar", disabled=True)
+
+    st.divider()
+
     if todos:
-        st.write(f"Total de documentos en sistema: **{len(todos)}**")
-        st.session_state.last_queries = [] # No resaltar nada por defecto en esta pestaña
+        st.write(f"Mostrando **{len(todos)}** documentos encontrados.")
+        st.session_state.last_queries = [] 
         for r in todos:
             with st.expander(f"{formatear_fecha_visual(r[3])} | {r[1]} - {r[4]}"):
                 render_editor_documento(r)
     else:
-        st.info("No hay documentos cargados todavía.")
+        st.info("No hay documentos que coincidan con el filtro seleccionado.")
 
 elif choice == "🔍 Buscador":
     st.header("Buscador Multitermino")
