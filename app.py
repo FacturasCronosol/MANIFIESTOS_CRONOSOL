@@ -28,29 +28,21 @@ st.markdown("""
     /* Botón Eliminar */
     div[key*="del_"] button { background-color: #dc3545 !important; color: white !important; }
     
-    .highlight-page { background-color: #fff3cd; padding: 10px; border-radius: 5px; border-left: 5px solid #ffc107; font-weight: bold; margin-bottom: 10px; }
+    .highlight-page { background-color: #fff3cd; padding: 10px; border-radius: 5px; border-left: 5px solid #ffc107; font-weight: bold; margin-bottom: 10px; color: #856404; }
     .upload-card { border: 1px solid #ddd; padding: 15px; border-radius: 10px; margin-bottom: 15px; background-color: #ffffff; }
     
-    /* Botones de descarga ZIP superiores */
-    .zip-download-container {
-        background-color: #f8f9fa;
-        padding: 20px;
-        border-radius: 12px;
-        border: 1px solid #e9ecef;
-        margin-bottom: 25px;
-    }
-    
-    /* Botón PDF Original (Gris/Azul oscuro) */
-    .btn-original button {
-        background-color: #6c757d !important;
-        color: white !important;
+    /* Contenedor de acciones masivas */
+    .mass-actions-box {
+        background-color: #f1f3f5;
+        padding: 15px;
+        border-radius: 10px;
+        border: 1px dashed #ced4da;
+        margin: 10px 0 25px 0;
     }
     </style>
     """, unsafe_allow_html=True)
 
 # --- UTILIDADES ---
-
-MESES_ES = {1: "ene", 2: "feb", 3: "mar", 4: "abr", 5: "may", 6: "jun", 7: "jul", 8: "ago", 9: "sep", 10: "oct", 11: "nov", 12: "dic"}
 
 def init_db():
     conn = sqlite3.connect('gestion_cronosol_v4.db', check_same_thread=False)
@@ -100,19 +92,18 @@ def generar_zip_busqueda(lista_resultados, usar_resaltado=False, queries=[]):
     buf = BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         for r in lista_resultados:
-            # id, tipo, numero, fecha, nombre, pags, blob...
             nombre = r[4] if r[4].lower().endswith(".pdf") else f"{r[4]}.pdf"
             blob = r[6]
             if usar_resaltado and queries:
                 blob = resaltar_pdf_multiple(blob, queries)
-            zf.writestr(nombre, blob)
+            zf.estr(nombre, blob)
     return buf.getvalue()
 
 # --- COMPONENTES ---
 
 def render_editor_documento(r, search_terms=[]):
     doc_id, tipo, num, fecha_iso, nombre, pags, blob = r
-    t1, t2 = st.tabs(["📄 Visualización", "⚙️ Gestión"])
+    t1, t2 = st.tabs(["📄 Ver / Resultados", "⚙️ Gestionar Datos"])
     
     with t1:
         p_dict = json.loads(pags)
@@ -123,30 +114,31 @@ def render_editor_documento(r, search_terms=[]):
                     p_encontradas.append(int(p))
         
         if p_encontradas:
-            st.markdown(f'<div class="highlight-page">📍 Coincidencias en página(s): {", ".join(map(str, sorted(p_encontradas)))}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="highlight-page">📍 Términos encontrados en pág: {", ".join(map(str, sorted(p_encontradas)))}</div>', unsafe_allow_html=True)
         
         c1, c2 = st.columns(2)
         p_ini = min(p_encontradas) if p_encontradas else 1
         
-        # Botón 1: Resaltado
         with c1:
             pdf_resaltado = resaltar_pdf_multiple(blob, search_terms)
-            st.components.v1.html(abrir_pdf_js(pdf_resaltado, p_ini, f"res_{doc_id}", f"Ver PDF Resaltado (Pág. {p_ini})", "#28a745"), height=60)
+            st.components.v1.html(abrir_pdf_js(pdf_resaltado, p_ini, f"res_{doc_id}", f"Ver PDF Resaltado (Pág. {p_ini})", "#28a745"), height=65)
         
-        # Botón 2: Original
         with c2:
-            st.components.v1.html(abrir_pdf_js(blob, p_ini, f"orig_{doc_id}", "Ver PDF Original", "#6c757d"), height=60)
+            st.components.v1.html(abrir_pdf_js(blob, p_ini, f"orig_{doc_id}", "Ver PDF Original", "#6c757d"), height=65)
 
     with t2:
-        # Formulario de edición (simplificado para este ejemplo)
-        new_nombre = st.text_input("Nombre", value=nombre, key=f"edit_n_{doc_id}")
-        new_tipo = st.selectbox("Tipo", ["Factura de Compra", "Manifiesto de Aduana"], index=0 if "Factura" in tipo else 1, key=f"edit_t_{doc_id}")
-        col_d1, col_d2 = st.columns(2)
-        if col_d1.button("💾 Guardar", key=f"save_{doc_id}"):
-            c.execute("UPDATE documentos SET nombre_archivo=?, tipo=? WHERE id=?", (new_nombre, new_tipo, doc_id))
+        col_ed1, col_ed2 = st.columns(2)
+        new_tipo = col_ed1.selectbox("Tipo", ["Factura de Compra", "Manifiesto de Aduana"], index=0 if "Factura" in tipo else 1, key=f"edit_t_{doc_id}")
+        new_fecha = col_ed2.text_input("Fecha", value=fecha_iso, key=f"edit_f_{doc_id}")
+        
+        st.divider()
+        col_btn1, col_btn2 = st.columns([1, 1])
+        if col_btn1.button("💾 Guardar Cambios", key=f"save_{doc_id}"):
+            c.execute("UPDATE documentos SET tipo=?, fecha_iso=? WHERE id=?", (new_tipo, new_fecha, doc_id))
             conn.commit()
+            st.success("Cambios guardados")
             st.rerun()
-        if col_d2.button("🗑️ Eliminar", key=f"del_{doc_id}"):
+        if col_btn2.button("🗑️ Eliminar Documento", key=f"del_{doc_id}"):
             c.execute("DELETE FROM documentos WHERE id=?", (doc_id,))
             conn.commit()
             st.rerun()
@@ -170,23 +162,23 @@ if choice == "🔍 Buscador":
         resultados = c.fetchall()
         
         if resultados:
-            st.markdown(f"### Resultados encontrados: {len(resultados)}")
+            st.subheader(f"Resultados encontrados: {len(resultados)}")
             
-            # --- SECCIÓN DE DESCARGA ZIP SUPERIOR ---
-            with st.container():
-                st.markdown('<div class="zip-download-container">', unsafe_allow_html=True)
-                st.write("📂 **Acciones Masivas para esta búsqueda:**")
-                cz1, cz2 = st.columns(2)
-                
+            # Contenedor limpio de acciones masivas
+            st.markdown('<div class="mass-actions-box">', unsafe_allow_html=True)
+            st.write("📂 **Acciones Masivas para esta búsqueda:**")
+            cz1, cz2 = st.columns(2)
+            
+            with cz1:
                 zip_resaltado = generar_zip_busqueda(resultados, True, queries)
-                cz1.download_button("📥 Descargar Todos Subrayados (.zip)", zip_resaltado, "busqueda_resaltada.zip", "application/zip")
-                
+                st.download_button("📥 Descargar Todos Subrayados (.zip)", zip_resaltado, "busqueda_resaltada.zip", "application/zip", key="dl_zip_res")
+            
+            with cz2:
                 zip_original = generar_zip_busqueda(resultados, False)
-                cz2.download_button("📥 Descargar Todos Originales (.zip)", zip_original, "busqueda_original.zip", "application/zip")
-                st.markdown('</div>', unsafe_allow_html=True)
+                st.download_button("📥 Descargar Todos Originales (.zip)", zip_original, "busqueda_original.zip", "application/zip", key="dl_zip_orig")
+            st.markdown('</div>', unsafe_allow_html=True)
             
             for r in resultados:
-                # Mostrar expander
                 coincide = [q for q in queries if q in r[7]]
                 with st.expander(f"📄 {r[3]} | {r[4]} ({', '.join(coincide)})"):
                     render_editor_documento(r[:7], queries)
@@ -198,27 +190,29 @@ elif choice == "📂 Inventario":
     c.execute("SELECT id, tipo, numero, fecha_iso, nombre_archivo, paginas_json, pdf_blob FROM documentos ORDER BY fecha_iso DESC")
     todos = c.fetchall()
     for r in todos:
-        with st.expander(f"{r[3]} | {r[1]} - {r[4]}"):
+        with st.expander(f"📅 {r[3]} | {r[1]} - {r[4]}"):
             render_editor_documento(r)
 
 elif choice == "📤 Carga":
-    st.header("Carga Masiva")
-    t_doc = st.radio("Tipo:", ["Factura de Compra", "Manifiesto de Aduana"], horizontal=True)
-    f_up = st.file_uploader("PDFs", type="pdf", accept_multiple_files=True)
-    if f_up and st.button("⚡ Procesar"):
-        for f in f_up:
-            b = f.read()
-            doc_id = hashlib.sha256(b).hexdigest()
-            with fitz.open(stream=b, filetype="pdf") as pdf:
-                full_txt = ""
-                p_map = {}
-                for i, p in enumerate(pdf):
-                    txt = p.get_text().upper()
-                    full_txt += txt + " "
-                    p_map[i+1] = txt
-                try:
-                    c.execute("INSERT INTO documentos VALUES (?,?,?,?,?,?,?,?,?)",
-                             (doc_id, t_doc, f.name, datetime.now().strftime("%Y-%m-%d"), "PROVEEDOR", full_txt, f.name, b, json.dumps(p_map)))
-                    conn.commit()
-                except: pass
-        st.success("Cargado.")
+    st.header("Carga Masiva de Documentos")
+    t_doc = st.radio("Tipo de Documento:", ["Factura de Compra", "Manifiesto de Aduana"], horizontal=True)
+    f_up = st.file_uploader("Subir archivos PDF", type="pdf", accept_multiple_files=True)
+    
+    if f_up:
+        if st.button("⚡ Analizar Documentos"):
+            for f in f_up:
+                b = f.read()
+                doc_id = hashlib.sha256(b).hexdigest()
+                with fitz.open(stream=b, filetype="pdf") as pdf:
+                    full_txt = ""
+                    p_map = {}
+                    for i, p in enumerate(pdf):
+                        txt = p.get_text().upper()
+                        full_txt += txt + " "
+                        p_map[i+1] = txt
+                    try:
+                        c.execute("INSERT INTO documentos VALUES (?,?,?,?,?,?,?,?,?)",
+                                 (doc_id, t_doc, f.name, datetime.now().strftime("%Y-%m-%d"), "PROVEEDOR", full_txt, f.name, b, json.dumps(p_map)))
+                        conn.commit()
+                    except: pass
+            st.success("Procesamiento completado e ingresado a la base de datos.")
