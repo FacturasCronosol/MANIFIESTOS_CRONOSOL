@@ -16,7 +16,7 @@ st.set_page_config(
     page_icon="🛡️"
 )
 
-# Estilo personalizado para botones y tarjetas (Sin traducciones CSS que afecten el uploader)
+# Estilo personalizado para botones y tarjetas
 st.markdown("""
     <style>
     .stButton>button { width: 100%; border-radius: 8px; height: 3.5em; background-color: #007bff; color: white; font-weight: bold; }
@@ -108,7 +108,10 @@ def normalizar_fecha_a_iso(texto_fecha):
     if not texto_fecha:
         return datetime.now().strftime("%Y-%m-%d")
     
-    texto_fecha = texto_fecha.upper().replace("DE ", " ").replace(".", "").replace(",", "").strip()
+    if isinstance(texto_fecha, (datetime, pd.Timestamp)):
+        return texto_fecha.strftime("%Y-%m-%d")
+
+    texto_fecha = str(texto_fecha).upper().replace("DE ", " ").replace(".", "").replace(",", "").strip()
     texto_fecha = re.sub(r'[^A-Z0-9/\-\s]', '', texto_fecha) 
     texto_fecha = re.sub(r'\s+', ' ', texto_fecha)
     
@@ -252,13 +255,20 @@ if choice == "📤 Carga Masiva":
                     st.markdown('<div class="upload-card">', unsafe_allow_html=True)
                     col1, col2 = st.columns([1, 2])
                     with col1:
-                        f_input = st.text_input(f"Fecha (AAAA-MM-DD)", value=d['fecha_iso'], key=f"f_{i}")
+                        # Convertir texto ISO a objeto date para el calendario
+                        try:
+                            fecha_dt = datetime.strptime(d['fecha_iso'], "%Y-%m-%d").date()
+                        except:
+                            fecha_dt = datetime.now().date()
+                        
+                        f_input = st.date_input(f"Fecha del Documento", value=fecha_dt, key=f"f_{i}")
                     with col2:
                         st.write(f"📄 **{d['nombre']}**")
                         if d.get("ocr_warning"):
                             st.markdown('<div class="ocr-warning">⚠️ Este PDF parece no tener OCR (no se detectó texto).</div>', unsafe_allow_html=True)
                     
-                    documentos_finales.append({**d, "fecha_iso": normalizar_fecha_a_iso(f_input)})
+                    # Guardamos la fecha seleccionada de nuevo como ISO
+                    documentos_finales.append({**d, "fecha_iso": f_input.strftime("%Y-%m-%d")})
                     st.markdown('</div>', unsafe_allow_html=True)
 
             if st.button("🚀 Guardar en Base de Datos"):
@@ -333,13 +343,21 @@ elif choice == "🔍 Buscador":
                             col_e1, col_e2 = st.columns(2)
                             edit_tipo = col_e1.selectbox("Tipo", ["Factura de Compra", "Manifiesto de Aduana"], 
                                                        index=0 if tipo=="Factura de Compra" else 1, key=f"t_{doc_id}")
-                            edit_fecha = col_e2.text_input("Fecha (AAAA-MM-DD)", value=fecha_iso, key=f"f_edit_{doc_id}")
+                            
+                            # Calendario para edición
+                            try:
+                                fecha_edit_dt = datetime.strptime(fecha_iso, "%Y-%m-%d").date()
+                            except:
+                                fecha_edit_dt = datetime.now().date()
+                                
+                            edit_fecha_dt = col_e2.date_input("Fecha", value=fecha_edit_dt, key=f"f_edit_{doc_id}")
                             
                             st.divider()
                             col_btn1, col_btn2 = st.columns(2)
                             
                             if col_btn1.button("💾 Guardar Cambios", key=f"save_{doc_id}"):
-                                actualizar_documento(doc_id, edit_tipo, edit_nombre, edit_fecha)
+                                # Guardamos convirtiendo el date a string ISO
+                                actualizar_documento(doc_id, edit_tipo, edit_nombre, edit_fecha_dt.strftime("%Y-%m-%d"))
                                 st.success("¡Datos actualizados!")
                                 st.rerun()
                             
