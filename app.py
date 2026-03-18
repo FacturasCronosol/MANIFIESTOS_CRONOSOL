@@ -19,14 +19,24 @@ st.set_page_config(
 # Estilo personalizado para botones y tarjetas
 st.markdown("""
     <style>
-    .stButton>button { width: 100%; border-radius: 8px; height: 3.5em; background-color: #007bff; color: white; font-weight: bold; }
-    .stDownloadButton>button { background-color: #28a745 !important; color: white !important; }
+    /* Botón general */
+    .stButton>button { width: 100%; border-radius: 8px; height: 3.5em; font-weight: bold; }
     
-    /* Estilo para botón de eliminar (Rojo) */
+    /* Botón de Guardar (Verde) */
+    div[data-testid="stVerticalBlock"] div[data-testid="stHorizontalBlock"] .stButton button[key*="save_"] {
+        background-color: #28a745 !important;
+        color: white !important;
+        border: none;
+    }
+
+    /* Botón de Eliminar (Rojo) */
     div[data-testid="stVerticalBlock"] div[data-testid="stHorizontalBlock"] .stButton button[key*="del_"] {
         background-color: #dc3545 !important;
         color: white !important;
+        border: none;
     }
+    
+    .stDownloadButton>button { background-color: #007bff !important; color: white !important; }
 
     .highlight-page { background-color: #fff3cd; padding: 5px; border-radius: 5px; border-left: 5px solid #ffc107; font-weight: bold; margin-bottom: 10px; }
     .upload-card { border: 1px solid #ddd; padding: 15px; border-radius: 10px; margin-bottom: 15px; background-color: #ffffff; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
@@ -35,7 +45,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# Diccionario para meses cortos y largos
+# Diccionarios de fechas
 MESES_ES = {
     1: "ene", 2: "feb", 3: "mar", 4: "abr", 5: "may", 6: "jun",
     7: "jul", 8: "ago", 9: "sep", 10: "oct", 11: "nov", 12: "dic"
@@ -53,16 +63,9 @@ def init_db():
     db_path = 'gestion_cronosol_v4.db' 
     conn = sqlite3.connect(db_path, check_same_thread=False)
     c = conn.cursor()
-    
-    try:
-        c.execute("SELECT fecha_iso FROM documentos LIMIT 1")
-    except sqlite3.OperationalError:
-        c.execute("DROP TABLE IF EXISTS documentos")
-    
     c.execute('''CREATE TABLE IF NOT EXISTS documentos 
                  (id TEXT PRIMARY KEY, tipo TEXT, numero TEXT, fecha_iso TEXT, 
                   proveedor TEXT, contenido TEXT, nombre_archivo TEXT, pdf_blob BLOB, paginas_json TEXT)''')
-    
     conn.commit()
     return conn, c
 
@@ -94,7 +97,6 @@ def resaltar_pdf(pdf_bytes, query):
         doc.close()
         return output_bytes
     except Exception as e:
-        st.error(f"Error al resaltar: {e}")
         return pdf_bytes
 
 def formatear_fecha_visual(fecha_iso):
@@ -107,7 +109,6 @@ def formatear_fecha_visual(fecha_iso):
 def normalizar_fecha_a_iso(texto_fecha):
     if not texto_fecha:
         return datetime.now().strftime("%Y-%m-%d")
-    
     if isinstance(texto_fecha, (datetime, pd.Timestamp)):
         return texto_fecha.strftime("%Y-%m-%d")
 
@@ -136,34 +137,15 @@ def normalizar_fecha_a_iso(texto_fecha):
 
     if re.match(r'^\d{4}-\d{2}-\d{2}$', texto_fecha):
         return texto_fecha
-        
     return datetime.now().strftime("%Y-%m-%d")
 
 def extraer_fecha_texto(texto):
     texto_limpio = texto.upper()
-    palabras_clave = [
-        r'FECHA EMISION', r'FECHA DE EMISIÓN', r'FECHA DE FACTURA', 
-        r'FECHA DOCUMENTO', r'FECHA EXPEDICION', r'FECHA:', r'F\. EMISION'
-    ]
-    
-    for p in palabras_clave:
-        match = re.search(f'{p}\s*[:\-]?\s*(.{{1,30}})', texto_limpio, re.DOTALL)
+    patrones = [r'(\d{1,2}[/-]\d{1,2}[/-]\d{4})', r'(\d{4}[/-]\d{1,2}[/-]\d{1,2})', r'(\d{1,2}\s+[A-Z]{3,10}\s+\d{4})']
+    for pat in patrones:
+        match = re.search(pat, texto_limpio)
         if match:
-            posible_fecha = match.group(1).strip()
-            f_num = re.search(r'(\d{1,2}[/-]\d{1,2}[/-]\d{4})|(\d{4}[/-]\d{1,2}[/-]\d{1,2})', posible_fecha)
-            if f_num: return normalizar_fecha_a_iso(f_num.group(0))
-            f_txt = re.search(r'(\d{1,2}\s+[A-Z]{3,10}\s+\d{4})', posible_fecha)
-            if f_txt: return normalizar_fecha_a_iso(f_txt.group(0))
-
-    patrones_globales = [
-        r'(\d{1,2}[/-]\d{1,2}[/-]\d{4})',  
-        r'(\d{4}[/-]\d{1,2}[/-]\d{1,2})',  
-        r'(\d{1,2}\s+[A-Z]{3,10}\s+\d{4})' 
-    ]
-    for pat in patrones_globales:
-        match_global = re.search(pat, texto_limpio)
-        if match_global:
-            return normalizar_fecha_a_iso(match_global.group(0))
+            return normalizar_fecha_a_iso(match.group(0))
     return datetime.now().strftime("%Y-%m-%d")
 
 def abrir_pdf_js(bin_file, page_num=1):
@@ -173,9 +155,7 @@ def abrir_pdf_js(bin_file, page_num=1):
     function openPDF() {{
         const byteCharacters = atob("{base64_pdf}");
         const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) {{
-            byteNumbers[i] = byteCharacters.charCodeAt(i);
-        }}
+        for (let i = 0; i < byteCharacters.length; i++) {{ byteNumbers[i] = byteCharacters.charCodeAt(i); }}
         const byteArray = new Uint8Array(byteNumbers);
         const file = new Blob([byteArray], {{type: 'application/pdf'}});
         const fileURL = URL.createObjectURL(file);
@@ -192,7 +172,6 @@ def abrir_pdf_js(bin_file, page_num=1):
 # --- INTERFAZ ---
 if 'pendientes' not in st.session_state:
     st.session_state.pendientes = []
-
 if 'uploader_id' not in st.session_state:
     st.session_state.uploader_id = 0
 
@@ -203,51 +182,31 @@ def limpiar_carga_total():
 with st.sidebar:
     st.title("🛡️ Cronosol")
     choice = st.radio("Menú", ["🔍 Buscador", "📤 Carga Masiva"])
-    st.divider()
-    st.info("Orden cronológico (Nuevo → Viejo).")
 
 if choice == "📤 Carga Masiva":
     st.header("Carga Masiva de Documentos")
-    
     tipo_doc = st.radio("Tipo de Documento:", ["Factura de Compra", "Manifiesto de Aduana"], horizontal=True)
-    
-    archivos = st.file_uploader(
-        "Subir archivos PDF", 
-        type="pdf", 
-        accept_multiple_files=True, 
-        key=f"uploader_{st.session_state.uploader_id}"
-    )
-
-    if not archivos and st.session_state.pendientes:
-        st.session_state.pendientes = []
-        st.rerun()
+    archivos = st.file_uploader("Subir archivos PDF", type="pdf", accept_multiple_files=True, key=f"uploader_{st.session_state.uploader_id}")
 
     if archivos:
         if st.button("⚡ Analizar Documentos"):
             st.session_state.pendientes = []
             for f in archivos:
-                f.seek(0)
                 pdf_bytes = f.read()
                 doc_id = hashlib.sha256(pdf_bytes).hexdigest()
                 with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
-                    if len(doc) > 0:
-                        raw_text = doc[0].get_text()
-                        tiene_ocr = len(raw_text.strip()) > 50
-                        fecha_iso = extraer_fecha_texto(raw_text)
-                        st.session_state.pendientes.append({
-                            "id": doc_id, "nombre": f.name, "tipo": tipo_doc,
-                            "fecha_iso": fecha_iso, "blob": pdf_bytes,
-                            "ocr_warning": not tiene_ocr
-                        })
+                    raw_text = doc[0].get_text() if len(doc) > 0 else ""
+                    st.session_state.pendientes.append({
+                        "id": doc_id, "nombre": f.name, "tipo": tipo_doc,
+                        "fecha_iso": extraer_fecha_texto(raw_text), "blob": pdf_bytes,
+                        "ocr_warning": len(raw_text.strip()) < 50
+                    })
 
         if st.session_state.pendientes:
             st.subheader("📋 Revisión de Datos")
-            
-            st.markdown('<div class="cancel-btn">', unsafe_allow_html=True)
-            if st.button("❌ Cancelar y Limpiar Carga"):
+            if st.button("❌ Cancelar Carga", key="cancel_main"):
                 limpiar_carga_total()
                 st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
             
             documentos_finales = []
             for i, d in enumerate(st.session_state.pendientes):
@@ -255,25 +214,17 @@ if choice == "📤 Carga Masiva":
                     st.markdown('<div class="upload-card">', unsafe_allow_html=True)
                     col1, col2 = st.columns([1, 2])
                     with col1:
-                        # Convertir texto ISO a objeto date para el calendario
-                        try:
-                            fecha_dt = datetime.strptime(d['fecha_iso'], "%Y-%m-%d").date()
-                        except:
-                            fecha_dt = datetime.now().date()
-                        
-                        f_input = st.date_input(f"Fecha del Documento", value=fecha_dt, key=f"f_{i}")
+                        try: fecha_dt = datetime.strptime(d['fecha_iso'], "%Y-%m-%d").date()
+                        except: fecha_dt = datetime.now().date()
+                        f_input = st.date_input(f"Fecha", value=fecha_dt, key=f"f_{i}")
                     with col2:
                         st.write(f"📄 **{d['nombre']}**")
-                        if d.get("ocr_warning"):
-                            st.markdown('<div class="ocr-warning">⚠️ Este PDF parece no tener OCR (no se detectó texto).</div>', unsafe_allow_html=True)
-                    
-                    # Guardamos la fecha seleccionada de nuevo como ISO
+                        if d.get("ocr_warning"): st.warning("⚠️ Sin texto detectable.")
                     documentos_finales.append({**d, "fecha_iso": f_input.strftime("%Y-%m-%d")})
                     st.markdown('</div>', unsafe_allow_html=True)
 
             if st.button("🚀 Guardar en Base de Datos"):
-                bar = st.progress(0)
-                for idx, doc in enumerate(documentos_finales):
+                for doc in documentos_finales:
                     texto_full = ""
                     dict_pags = {}
                     with fitz.open(stream=doc['blob'], filetype="pdf") as pdf:
@@ -282,100 +233,58 @@ if choice == "📤 Carga Masiva":
                             texto_full += t + " "
                             dict_pags[p_idx+1] = t
                     try:
-                        c.execute("""INSERT INTO documentos 
-                                   (id, tipo, numero, fecha_iso, proveedor, contenido, nombre_archivo, pdf_blob, paginas_json) 
-                                   VALUES (?,?,?,?,?,?,?,?,?)""", 
-                                 (doc['id'], doc['tipo'], doc['nombre'], doc['fecha_iso'], 
-                                  "GENERAL", texto_full, doc['nombre'], doc['blob'], json.dumps(dict_pags)))
+                        c.execute("INSERT INTO documentos VALUES (?,?,?,?,?,?,?,?,?)", 
+                                 (doc['id'], doc['tipo'], doc['nombre'], doc['fecha_iso'], "GENERAL", texto_full, doc['nombre'], doc['blob'], json.dumps(dict_pags)))
                         conn.commit()
-                    except sqlite3.IntegrityError:
-                        pass
-                    bar.progress((idx + 1) / len(documentos_finales))
-                
-                st.success("¡Documentos indexados correctamente!")
+                    except: pass
+                st.success("¡Guardado!")
                 limpiar_carga_total()
                 st.rerun()
 
 elif choice == "🔍 Buscador":
-    if st.session_state.pendientes:
-        st.session_state.pendientes = []
-        
     st.header("Buscador de Trazabilidad")
-    query = st.text_input("Ingrese Referencia, Contenedor o Palabra Clave").upper()
+    query = st.text_input("Ingrese Referencia o Palabra Clave").upper()
 
     if query:
-        try:
-            c.execute("""SELECT id, tipo, numero, fecha_iso, nombre_archivo, paginas_json, pdf_blob 
-                         FROM documentos WHERE contenido LIKE ? ORDER BY fecha_iso DESC""", (f'%{query}%',))
-            res = c.fetchall()
-            
-            if res:
-                st.write(f"Resultados encontrados: **{len(res)}**")
-                for r in res:
-                    doc_id, tipo, num, fecha_iso, nombre, pags, blob = r
-                    emoji = "🟢" if tipo == "Factura de Compra" else "🔵"
-                    fecha_vis = formatear_fecha_visual(fecha_iso)
-                    
-                    with st.expander(f"{emoji} {fecha_vis} | {tipo} - {nombre}"):
-                        tab1, tab2 = st.tabs(["📄 Ver / Descargar", "⚙️ Gestionar"])
+        c.execute("SELECT id, tipo, numero, fecha_iso, nombre_archivo, paginas_json, pdf_blob FROM documentos WHERE contenido LIKE ? ORDER BY fecha_iso DESC", (f'%{query}%',))
+        res = c.fetchall()
+        if res:
+            for r in res:
+                doc_id, tipo, num, fecha_iso, nombre, pags, blob = r
+                with st.expander(f"{formatear_fecha_visual(fecha_iso)} | {tipo} - {nombre}"):
+                    tab1, tab2 = st.tabs(["📄 Ver", "⚙️ Gestionar"])
+                    with tab1:
+                        p_dict = json.loads(pags)
+                        encontrado = [p for p, cont in p_dict.items() if query in cont]
+                        if encontrado: st.info(f"📍 Encontrado en pág: {', '.join(map(str, encontrado))}")
+                        st.components.v1.html(abrir_pdf_js(resaltar_pdf(blob, query), encontrado[0] if encontrado else 1), height=70)
+                    with tab2:
+                        edit_nombre = st.text_input("Nombre", value=nombre, key=f"n_{doc_id}")
+                        c_e1, c_e2 = st.columns(2)
+                        edit_tipo = c_e1.selectbox("Tipo", ["Factura de Compra", "Manifiesto de Aduana"], index=0 if tipo=="Factura de Compra" else 1, key=f"t_{doc_id}")
+                        try: f_edit_dt = datetime.strptime(fecha_iso, "%Y-%m-%d").date()
+                        except: f_edit_dt = datetime.now().date()
+                        edit_fecha = c_e2.date_input("Fecha", value=f_edit_dt, key=f"f_edit_{doc_id}")
                         
-                        with tab1:
-                            encontrado = []
-                            if pags:
-                                p_dict = json.loads(pags)
-                                encontrado = [p for p, cont in p_dict.items() if query in cont]
-                            
-                            col_i, col_b = st.columns([2, 1])
-                            with col_i:
-                                if encontrado:
-                                    st.markdown(f'<div class="highlight-page">📍 Página(s): {", ".join(map(str, encontrado))}</div>', unsafe_allow_html=True)
-                                else:
-                                    st.info("Referencia encontrada en el contenido general.")
-                            with col_b:
-                                p_dest = encontrado[0] if encontrado else 1
-                                pdf_resaltado = resaltar_pdf(blob, query)
-                                st.components.v1.html(abrir_pdf_js(pdf_resaltado, p_dest), height=70)
-                                st.download_button("💾 Bajar PDF", pdf_resaltado, f"RESALTADO_{nombre}", "application/pdf", key=f"d_{doc_id}")
+                        st.divider()
+                        # Columnas invertidas: Eliminar (izquierda) | Guardar (derecha)
+                        col_btn_del, col_btn_save = st.columns(2)
                         
-                        with tab2:
-                            st.subheader("Editar información")
-                            edit_nombre = st.text_input("Nombre del archivo", value=nombre, key=f"n_{doc_id}")
-                            col_e1, col_e2 = st.columns(2)
-                            edit_tipo = col_e1.selectbox("Tipo", ["Factura de Compra", "Manifiesto de Aduana"], 
-                                                       index=0 if tipo=="Factura de Compra" else 1, key=f"t_{doc_id}")
-                            
-                            # Calendario para edición
-                            try:
-                                fecha_edit_dt = datetime.strptime(fecha_iso, "%Y-%m-%d").date()
-                            except:
-                                fecha_edit_dt = datetime.now().date()
-                                
-                            edit_fecha_dt = col_e2.date_input("Fecha", value=fecha_edit_dt, key=f"f_edit_{doc_id}")
-                            
-                            st.divider()
-                            col_btn1, col_btn2 = st.columns(2)
-                            
-                            if col_btn1.button("💾 Guardar Cambios", key=f"save_{doc_id}"):
-                                # Guardamos convirtiendo el date a string ISO
-                                actualizar_documento(doc_id, edit_tipo, edit_nombre, edit_fecha_dt.strftime("%Y-%m-%d"))
-                                st.success("¡Datos actualizados!")
+                        # Lógica de eliminación a la izquierda
+                        if f"confirm_del_{doc_id}" not in st.session_state:
+                            if col_btn_del.button("🗑️ Eliminar Documento", key=f"del_{doc_id}"):
+                                st.session_state[f"confirm_del_{doc_id}"] = True
                                 st.rerun()
-                            
-                            if f"confirm_del_{doc_id}" not in st.session_state:
-                                if col_btn2.button("🗑️ Eliminar Documento", key=f"del_{doc_id}"):
-                                    st.session_state[f"confirm_del_{doc_id}"] = True
-                                    st.rerun()
-                            else:
-                                st.error("¿Estás seguro de eliminar este documento?")
-                                col_c1, col_c2 = st.columns(2)
-                                if col_c1.button("✅ Sí, eliminar definitivamente", key=f"confirm_del_btn_{doc_id}"):
-                                    eliminar_documento(doc_id)
-                                    del st.session_state[f"confirm_del_{doc_id}"]
-                                    st.rerun()
-                                if col_c2.button("❌ Cancelar", key=f"cancel_del_{doc_id}"):
-                                    del st.session_state[f"confirm_del_{doc_id}"]
-                                    st.rerun()
-            else:
-                st.error("No se encontraron resultados.")
-        except sqlite3.OperationalError as e:
-            st.error(f"Error técnico: {e}")
+                        else:
+                            st.error("¿Confirmar eliminación?")
+                            if col_btn_del.button("✅ Confirmar", key=f"confirm_del_btn_{doc_id}"):
+                                eliminar_documento(doc_id)
+                                st.rerun()
+
+                        # Lógica de guardado a la derecha
+                        if col_btn_save.button("💾 Guardar Cambios", key=f"save_{doc_id}"):
+                            actualizar_documento(doc_id, edit_tipo, edit_nombre, edit_fecha.strftime("%Y-%m-%d"))
+                            st.success("¡Actualizado!")
+                            st.rerun()
+        else:
+            st.warning("Sin resultados.")
