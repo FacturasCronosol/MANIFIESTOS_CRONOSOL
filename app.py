@@ -198,6 +198,14 @@ def abrir_pdf_js(bin_file, page_num=1):
 if 'pendientes' not in st.session_state:
     st.session_state.pendientes = []
 
+# ID para refrescar el uploader (técnica del Key-swapping)
+if 'uploader_id' not in st.session_state:
+    st.session_state.uploader_id = 0
+
+def limpiar_carga_total():
+    st.session_state.pendientes = []
+    st.session_state.uploader_id += 1 # Al cambiar la key, el uploader se vacía
+
 with st.sidebar:
     st.title("🛡️ Cronosol")
     choice = st.radio("Menú", ["🔍 Buscador", "📤 Carga Masiva"])
@@ -207,19 +215,24 @@ with st.sidebar:
 if choice == "📤 Carga Masiva":
     st.header("Carga Masiva de Documentos")
     
-    # Si el usuario limpia el uploader de archivos, borramos pendientes inmediatamente
     tipo_doc = st.radio("Tipo de Documento:", ["Factura de Compra", "Manifiesto de Aduana"], horizontal=True)
-    archivos = st.file_uploader("Subir archivos PDF", type="pdf", accept_multiple_files=True, key="uploader_masivo")
+    
+    # El uploader usa una key dinámica para que podamos forzar su limpieza
+    archivos = st.file_uploader(
+        "Subir archivos PDF", 
+        type="pdf", 
+        accept_multiple_files=True, 
+        key=f"uploader_{st.session_state.uploader_id}"
+    )
 
-    # Si no hay archivos en el uploader pero hay pendientes, limpiar (se presionó la X del uploader)
+    # Si no hay archivos en el uploader pero hay pendientes (se presionó la X individual o se borraron manualmente)
     if not archivos and st.session_state.pendientes:
         st.session_state.pendientes = []
         st.rerun()
 
     if archivos:
-        # Solo mostrar el botón de analizar si no hemos analizado estos archivos aún
         if st.button("⚡ Analizar Documentos"):
-            st.session_state.pendientes = [] # Reinicio preventivo
+            st.session_state.pendientes = []
             for f in archivos:
                 f.seek(0)
                 pdf_bytes = f.read()
@@ -238,10 +251,9 @@ if choice == "📤 Carga Masiva":
         if st.session_state.pendientes:
             st.subheader("📋 Revisión de Datos")
             
-            # Botón para cancelar todo
             st.markdown('<div class="cancel-btn">', unsafe_allow_html=True)
-            if st.button("❌ Cancelar y Limpiar Carga"):
-                st.session_state.pendientes = []
+            if st.button("❌ Cancelar y Limpiar Todo"):
+                limpiar_carga_total()
                 st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
             
@@ -281,15 +293,15 @@ if choice == "📤 Carga Masiva":
                         pass
                     bar.progress((idx + 1) / len(documentos_finales))
                 
-                # Limpieza TOTAL después de guardar
                 st.success("¡Documentos indexados correctamente!")
-                st.session_state.pendientes = []
+                limpiar_carga_total()
                 st.rerun()
 
 elif choice == "🔍 Buscador":
-    # Al cambiar de pestaña, también es buena idea limpiar pendientes por seguridad
-    if st.session_state.pendientes:
+    # Limpiar cualquier residuo de carga al cambiar al buscador
+    if st.session_state.pendientes or st.session_state.uploader_id > 0:
         st.session_state.pendientes = []
+        # No reiniciamos el uploader_id aquí para no causar bucles, solo la lista
         
     st.header("Buscador de Trazabilidad")
     query = st.text_input("Ingrese Referencia, Contenedor o Palabra Clave").upper()
@@ -361,4 +373,4 @@ elif choice == "🔍 Buscador":
             else:
                 st.error("No se encontraron resultados.")
         except sqlite3.OperationalError as e:
-            st.error(f"Error técnico: {e}")
+            st.error(f"Error técnico: {e}")v
