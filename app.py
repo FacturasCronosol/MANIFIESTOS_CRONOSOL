@@ -92,11 +92,12 @@ def generar_zip_busqueda(lista_resultados, usar_resaltado=False, queries=[]):
     buf = BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         for r in lista_resultados:
+            # Estructura r: (id, tipo, num, fecha, nombre, pags, blob...)
             nombre = r[4] if r[4].lower().endswith(".pdf") else f"{r[4]}.pdf"
             blob = r[6]
             if usar_resaltado and queries:
                 blob = resaltar_pdf_multiple(blob, queries)
-            zf.estr(nombre, blob)
+            zf.writestr(nombre, blob)
     return buf.getvalue()
 
 # --- COMPONENTES ---
