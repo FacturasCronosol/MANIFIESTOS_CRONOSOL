@@ -9,14 +9,14 @@ import re
 import os
 from datetime import datetime
 
-# Configuración profesional y límite de carga (50MB)
+# Configuración profesional
 st.set_page_config(
     page_title="Gestión Cronosol - DIAN", 
     layout="wide", 
     page_icon="🛡️"
 )
 
-# Estilo personalizado para botones, tarjetas y TRADUCCIÓN del uploader
+# Estilo personalizado para botones y tarjetas (Sin traducciones CSS que afecten el uploader)
 st.markdown("""
     <style>
     .stButton>button { width: 100%; border-radius: 8px; height: 3.5em; background-color: #007bff; color: white; font-weight: bold; }
@@ -26,32 +26,6 @@ st.markdown("""
     div[data-testid="stVerticalBlock"] div[data-testid="stHorizontalBlock"] .stButton button[key*="del_"] {
         background-color: #dc3545 !important;
         color: white !important;
-    }
-    
-    /* Traducción visual del File Uploader al Español */
-    section[data-testid="stFileUploadDropzone"] > div:first-child::before {
-        content: "Arrastra y suelta tus archivos aquí";
-        font-weight: bold;
-        display: block;
-        margin-bottom: 10px;
-    }
-    section[data-testid="stFileUploadDropzone"] > div:first-child > span {
-        display: none; /* Oculta el texto original en inglés */
-    }
-    section[data-testid="stFileUploadDropzone"] > div:first-child::after {
-        content: "Límite de 50MB por archivo • PDF";
-        font-size: 0.8em;
-        color: #666;
-    }
-    section[data-testid="stFileUploadDropzone"] button {
-        text-indent: -9999px;
-        line-height: 0;
-    }
-    section[data-testid="stFileUploadDropzone"] button::after {
-        content: "Buscar archivos";
-        text-indent: 0;
-        display: block;
-        line-height: initial;
     }
 
     .highlight-page { background-color: #fff3cd; padding: 5px; border-radius: 5px; border-left: 5px solid #ffc107; font-weight: bold; margin-bottom: 10px; }
@@ -234,26 +208,12 @@ if choice == "📤 Carga Masiva":
     
     tipo_doc = st.radio("Tipo de Documento:", ["Factura de Compra", "Manifiesto de Aduana"], horizontal=True)
     
-    # Límite de 50MB (ajustado de 200MB según solicitud)
-    MAX_FILE_SIZE = 50 * 1024 * 1024 # 50MB en bytes
-
     archivos = st.file_uploader(
         "Subir archivos PDF", 
         type="pdf", 
         accept_multiple_files=True, 
-        key=f"uploader_{st.session_state.uploader_id}",
-        help="Límite máximo por archivo: 50MB"
+        key=f"uploader_{st.session_state.uploader_id}"
     )
-
-    # Validación de tamaño manual
-    if archivos:
-        validos = []
-        for f in archivos:
-            if f.size > MAX_FILE_SIZE:
-                st.error(f"El archivo {f.name} supera el límite de 50MB y será ignorado.")
-            else:
-                validos.append(f)
-        archivos = validos
 
     if not archivos and st.session_state.pendientes:
         st.session_state.pendientes = []
