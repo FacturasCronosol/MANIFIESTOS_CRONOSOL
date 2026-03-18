@@ -9,29 +9,61 @@ import re
 import os
 from datetime import datetime
 
-# Configuración profesional
-st.set_page_config(page_title="Gestión Cronosol - DIAN", layout="wide", page_icon="🛡️")
+# Configuración profesional y límite de carga (50MB)
+st.set_page_config(
+    page_title="Gestión Cronosol - DIAN", 
+    layout="wide", 
+    page_icon="🛡️"
+)
 
-# Estilo personalizado
+# Estilo personalizado para botones, tarjetas y TRADUCCIÓN del uploader
 st.markdown("""
     <style>
     .stButton>button { width: 100%; border-radius: 8px; height: 3.5em; background-color: #007bff; color: white; font-weight: bold; }
     .stDownloadButton>button { background-color: #28a745 !important; color: white !important; }
+    
     /* Estilo para botón de eliminar (Rojo) */
     div[data-testid="stVerticalBlock"] div[data-testid="stHorizontalBlock"] .stButton button[key*="del_"] {
         background-color: #dc3545 !important;
         color: white !important;
     }
-    div[data-testid="stVerticalBlock"] div[data-testid="stHorizontalBlock"] .stButton button[key*="confirm_del_"] {
-        background-color: #c82333 !important;
-        color: white !important;
+    
+    /* Traducción visual del File Uploader al Español */
+    section[data-testid="stFileUploadDropzone"] > div:first-child::before {
+        content: "Arrastra y suelta tus archivos aquí";
+        font-weight: bold;
+        display: block;
+        margin-bottom: 10px;
     }
+    section[data-testid="stFileUploadDropzone"] > div:first-child > span {
+        display: none; /* Oculta el texto original en inglés */
+    }
+    section[data-testid="stFileUploadDropzone"] > div:first-child::after {
+        content: "Límite de 50MB por archivo • PDF";
+        font-size: 0.8em;
+        color: #666;
+    }
+    section[data-testid="stFileUploadDropzone"] button {
+        text-indent: -9999px;
+        line-height: 0;
+    }
+    section[data-testid="stFileUploadDropzone"] button::after {
+        content: "Buscar archivos";
+        text-indent: 0;
+        display: block;
+        line-height: initial;
+    }
+
     .highlight-page { background-color: #fff3cd; padding: 5px; border-radius: 5px; border-left: 5px solid #ffc107; font-weight: bold; margin-bottom: 10px; }
     .upload-card { border: 1px solid #ddd; padding: 15px; border-radius: 10px; margin-bottom: 15px; background-color: #ffffff; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
     .ocr-warning { background-color: #f8d7da; color: #721c24; padding: 10px; border-radius: 5px; border-left: 5px solid #dc3545; font-weight: bold; margin-top: 5px; }
     .cancel-btn button { background-color: #6c757d !important; color: white !important; }
     </style>
     """, unsafe_allow_html=True)
+
+# Límite de carga de archivos en Streamlit (Configuración de servidor vía código)
+# Nota: En despliegues reales esto suele ir en .streamlit/config.toml
+# pero aquí forzamos la lógica de validación.
 
 # Diccionario para meses cortos y largos
 MESES_ES = {
@@ -106,12 +138,10 @@ def normalizar_fecha_a_iso(texto_fecha):
     if not texto_fecha:
         return datetime.now().strftime("%Y-%m-%d")
     
-    # Limpieza profunda de caracteres no deseados
     texto_fecha = texto_fecha.upper().replace("DE ", " ").replace(".", "").replace(",", "").strip()
-    texto_fecha = re.sub(r'[^A-Z0-9/\-\s]', '', texto_fecha) # Solo dejamos letras, números y separadores
+    texto_fecha = re.sub(r'[^A-Z0-9/\-\s]', '', texto_fecha) 
     texto_fecha = re.sub(r'\s+', ' ', texto_fecha)
     
-    # Intento 1: Formatos numéricos (DD/MM/AAAA o AAAA/MM/DD)
     m1 = re.search(r'(\d{1,2})[/-](\d{1,2})[/-](\d{4})', texto_fecha)
     if m1:
         d, m, y = m1.groups()
@@ -124,7 +154,6 @@ def normalizar_fecha_a_iso(texto_fecha):
         try: return f"{int(y):04d}-{int(m):02d}-{int(d):02d}"
         except: pass
 
-    # Intento 2: Fechas con nombre de mes (Ej: 15 ENERO 2024)
     m3 = re.search(r'(\d{1,2})\s+([A-Z]{3,10})\s+(\d{4})', texto_fecha)
     if m3:
         d, mes_nombre, y = m3.groups()
@@ -139,8 +168,6 @@ def normalizar_fecha_a_iso(texto_fecha):
 
 def extraer_fecha_texto(texto):
     texto_limpio = texto.upper()
-    
-    # Intento 1: Buscar etiquetas específicas (Facturas y Manifiestos)
     palabras_clave = [
         r'FECHA EMISION', r'FECHA DE EMISIÓN', r'FECHA DE FACTURA', 
         r'FECHA DOCUMENTO', r'FECHA EXPEDICION', r'FECHA:', r'F\. EMISION'
@@ -150,25 +177,20 @@ def extraer_fecha_texto(texto):
         match = re.search(f'{p}\s*[:\-]?\s*(.{{1,30}})', texto_limpio, re.DOTALL)
         if match:
             posible_fecha = match.group(1).strip()
-            # Buscar estructura de fecha dentro del pedazo encontrado
             f_num = re.search(r'(\d{1,2}[/-]\d{1,2}[/-]\d{4})|(\d{4}[/-]\d{1,2}[/-]\d{1,2})', posible_fecha)
             if f_num: return normalizar_fecha_a_iso(f_num.group(0))
-            
             f_txt = re.search(r'(\d{1,2}\s+[A-Z]{3,10}\s+\d{4})', posible_fecha)
             if f_txt: return normalizar_fecha_a_iso(f_txt.group(0))
 
-    # Intento 2: Búsqueda global
     patrones_globales = [
-        r'(\d{1,2}[/-]\d{1,2}[/-]\d{4})',  # DD/MM/AAAA
-        r'(\d{4}[/-]\d{1,2}[/-]\d{1,2})',  # AAAA/MM/DD
-        r'(\d{1,2}\s+[A-Z]{3,10}\s+\d{4})' # DD MES AAAA
+        r'(\d{1,2}[/-]\d{1,2}[/-]\d{4})',  
+        r'(\d{4}[/-]\d{1,2}[/-]\d{1,2})',  
+        r'(\d{1,2}\s+[A-Z]{3,10}\s+\d{4})' 
     ]
-    
     for pat in patrones_globales:
         match_global = re.search(pat, texto_limpio)
         if match_global:
             return normalizar_fecha_a_iso(match_global.group(0))
-                
     return datetime.now().strftime("%Y-%m-%d")
 
 def abrir_pdf_js(bin_file, page_num=1):
@@ -198,13 +220,12 @@ def abrir_pdf_js(bin_file, page_num=1):
 if 'pendientes' not in st.session_state:
     st.session_state.pendientes = []
 
-# ID para refrescar el uploader (técnica del Key-swapping)
 if 'uploader_id' not in st.session_state:
     st.session_state.uploader_id = 0
 
 def limpiar_carga_total():
     st.session_state.pendientes = []
-    st.session_state.uploader_id += 1 # Al cambiar la key, el uploader se vacía
+    st.session_state.uploader_id += 1
 
 with st.sidebar:
     st.title("🛡️ Cronosol")
@@ -217,15 +238,27 @@ if choice == "📤 Carga Masiva":
     
     tipo_doc = st.radio("Tipo de Documento:", ["Factura de Compra", "Manifiesto de Aduana"], horizontal=True)
     
-    # El uploader usa una key dinámica para que podamos forzar su limpieza
+    # Límite de 50MB
+    MAX_FILE_SIZE = 50 * 1024 * 1024 # 50MB en bytes
+
     archivos = st.file_uploader(
         "Subir archivos PDF", 
         type="pdf", 
         accept_multiple_files=True, 
-        key=f"uploader_{st.session_state.uploader_id}"
+        key=f"uploader_{st.session_state.uploader_id}",
+        help="Límite máximo por archivo: 50MB"
     )
 
-    # Si no hay archivos en el uploader pero hay pendientes (se presionó la X individual o se borraron manualmente)
+    # Validación de tamaño manual por si el CSS o config fallan
+    if archivos:
+        validos = []
+        for f in archivos:
+            if f.size > MAX_FILE_SIZE:
+                st.error(f"El archivo {f.name} supera el límite de 50MB y será ignorado.")
+            else:
+                validos.append(f)
+        archivos = validos
+
     if not archivos and st.session_state.pendientes:
         st.session_state.pendientes = []
         st.rerun()
@@ -252,7 +285,7 @@ if choice == "📤 Carga Masiva":
             st.subheader("📋 Revisión de Datos")
             
             st.markdown('<div class="cancel-btn">', unsafe_allow_html=True)
-            if st.button("❌ Cancelar y Limpiar Todo"):
+            if st.button("❌ Cancelar y Limpiar Carga"):
                 limpiar_carga_total()
                 st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
@@ -298,10 +331,8 @@ if choice == "📤 Carga Masiva":
                 st.rerun()
 
 elif choice == "🔍 Buscador":
-    # Limpiar cualquier residuo de carga al cambiar al buscador
-    if st.session_state.pendientes or st.session_state.uploader_id > 0:
+    if st.session_state.pendientes:
         st.session_state.pendientes = []
-        # No reiniciamos el uploader_id aquí para no causar bucles, solo la lista
         
     st.header("Buscador de Trazabilidad")
     query = st.text_input("Ingrese Referencia, Contenedor o Palabra Clave").upper()
