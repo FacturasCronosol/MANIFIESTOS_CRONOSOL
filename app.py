@@ -32,10 +32,17 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# Diccionario para meses cortos
+# Diccionario para meses cortos y largos
 MESES_ES = {
     1: "ene", 2: "feb", 3: "mar", 4: "abr", 5: "may", 6: "jun",
     7: "jul", 8: "ago", 9: "sep", 10: "oct", 11: "nov", 12: "dic"
+}
+
+MESES_NOMBRE_A_NUM = {
+    'ENERO': '01', 'FEBRERO': '02', 'MARZO': '03', 'ABRIL': '04', 'MAYO': '05', 'JUNIO': '06',
+    'JULIO': '07', 'AGOSTO': '08', 'SEPTIEMBRE': '09', 'OCTUBRE': '10', 'NOVIEMBRE': '11', 'DICIEMBRE': '12',
+    'ENE': '01', 'FEB': '02', 'MAR': '03', 'ABR': '04', 'MAY': '05', 'JUN': '06',
+    'JUL': '07', 'AGO': '08', 'SEP': '09', 'OCT': '10', 'NOV': '11', 'DIC': '12'
 }
 
 # Inicialización de la base de datos
@@ -97,27 +104,55 @@ def formatear_fecha_visual(fecha_iso):
 def normalizar_fecha_a_iso(texto_fecha):
     if not texto_fecha:
         return datetime.now().strftime("%Y-%m-%d")
-    texto_fecha = texto_fecha.upper().replace("DE ", "").replace(".", "").replace(",", "").strip()
+    
+    texto_fecha = texto_fecha.upper().replace("DE ", " ").replace(".", "").replace(",", "").strip()
+    texto_fecha = re.sub(r'\s+', ' ', texto_fecha)
+    
+    # Intento 1: Formatos numéricos (DD/MM/AAAA o AAAA/MM/DD)
     m1 = re.search(r'(\d{1,2})[/-](\d{1,2})[/-](\d{4})', texto_fecha)
     if m1:
         d, m, y = m1.groups()
         try: return f"{int(y):04d}-{int(m):02d}-{int(d):02d}"
         except: pass
+        
     m2 = re.search(r'(\d{4})[/-](\d{1,2})[/-](\d{1,2})', texto_fecha)
     if m2:
         y, m, d = m2.groups()
         try: return f"{int(y):04d}-{int(m):02d}-{int(d):02d}"
         except: pass
+
+    # Intento 2: Fechas con nombre de mes (Ej: 15 ENERO 2024)
+    m3 = re.search(r'(\d{1,2})\s+([A-Z]{3,10})\s+(\d{4})', texto_fecha)
+    if m3:
+        d, mes_nombre, y = m3.groups()
+        if mes_nombre in MESES_NOMBRE_A_NUM:
+            m = MESES_NOMBRE_A_NUM[mes_nombre]
+            return f"{int(y):04d}-{m}-{int(d):02d}"
+
     if re.match(r'^\d{4}-\d{2}-\d{2}$', texto_fecha):
         return texto_fecha
+        
     return datetime.now().strftime("%Y-%m-%d")
 
 def extraer_fecha_texto(texto):
-    prioridades = [r'FECHA EMISION', r'FECHA DE EMISIÓN', r'FECHA DE FACTURA', r'FECHA:']
-    for p in prioridades:
-        match = re.search(f'{p}.*?(\\d{{1,2}}[/-]\\d{{1,2}}[/-]\\d{{4}})', texto, re.IGNORECASE | re.DOTALL)
+    # Ampliamos el rango de búsqueda para capturar fechas en líneas siguientes o con formatos variados
+    texto_limpio = texto.upper()
+    palabras_clave = [r'FECHA EMISION', r'FECHA DE EMISIÓN', r'FECHA DE FACTURA', r'FECHA DOCUMENTO', r'FECHA:']
+    
+    for p in palabras_clave:
+        # Buscamos la etiqueta y capturamos hasta 30 caracteres después (incluyendo saltos de línea)
+        match = re.search(f'{p}\s*[:\-]?\s*(.{{1,30}})', texto_limpio, re.DOTALL)
         if match:
-            return normalizar_fecha_a_iso(match.group(1))
+            posible_fecha = match.group(1).strip()
+            # Intentamos extraer una estructura de fecha de ese bloque
+            formato_num = re.search(r'(\d{1,2}[/-]\d{1,2}[/-]\d{4})|(\d{4}[/-]\d{1,2}[/-]\d{1,2})', posible_fecha)
+            if formato_num:
+                return normalizar_fecha_a_iso(formato_num.group(0))
+            
+            formato_texto = re.search(r'(\d{1,2}\s+[A-Z]{3,10}\s+\d{4})', posible_fecha)
+            if formato_texto:
+                return normalizar_fecha_a_iso(formato_texto.group(0))
+                
     return datetime.now().strftime("%Y-%m-%d")
 
 def abrir_pdf_js(bin_file, page_num=1):
