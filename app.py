@@ -17,8 +17,18 @@ st.markdown("""
     <style>
     .stButton>button { width: 100%; border-radius: 8px; height: 3.5em; background-color: #007bff; color: white; font-weight: bold; }
     .stDownloadButton>button { background-color: #28a745 !important; color: white !important; }
+    /* Estilo para botón de eliminar (Rojo) */
+    div[data-testid="stVerticalBlock"] div[data-testid="stHorizontalBlock"] .stButton button[key*="del_"] {
+        background-color: #dc3545 !important;
+        color: white !important;
+    }
+    div[data-testid="stVerticalBlock"] div[data-testid="stHorizontalBlock"] .stButton button[key*="confirm_del_"] {
+        background-color: #c82333 !important;
+        color: white !important;
+    }
     .highlight-page { background-color: #fff3cd; padding: 5px; border-radius: 5px; border-left: 5px solid #ffc107; font-weight: bold; margin-bottom: 10px; }
     .upload-card { border: 1px solid #ddd; padding: 15px; border-radius: 10px; margin-bottom: 15px; background-color: #ffffff; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    .ocr-warning { background-color: #f8d7da; color: #721c24; padding: 10px; border-radius: 5px; border-left: 5px solid #dc3545; font-weight: bold; margin-top: 5px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -34,7 +44,6 @@ def init_db():
     conn = sqlite3.connect(db_path, check_same_thread=False)
     c = conn.cursor()
     
-    # Verificación de esquema para evitar errores de columnas faltantes
     try:
         c.execute("SELECT fecha_iso FROM documentos LIMIT 1")
     except sqlite3.OperationalError:
@@ -155,10 +164,14 @@ if choice == "📤 Carga Masiva":
                 doc_id = hashlib.sha256(pdf_bytes).hexdigest()
                 with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
                     if len(doc) > 0:
-                        fecha_iso = extraer_fecha_texto(doc[0].get_text())
+                        raw_text = doc[0].get_text()
+                        # Validación de OCR: Si tiene muy poco texto, advertimos
+                        tiene_ocr = len(raw_text.strip()) > 50
+                        fecha_iso = extraer_fecha_texto(raw_text)
                         st.session_state.pendientes.append({
                             "id": doc_id, "nombre": f.name, "tipo": tipo_doc,
-                            "fecha_iso": fecha_iso, "blob": pdf_bytes
+                            "fecha_iso": fecha_iso, "blob": pdf_bytes,
+                            "ocr_warning": not tiene_ocr
                         })
 
         if 'pendientes' in st.session_state and st.session_state.pendientes:
@@ -172,6 +185,9 @@ if choice == "📤 Carga Masiva":
                         f_input = st.text_input(f"Fecha (AAAA-MM-DD)", value=d['fecha_iso'], key=f"f_{i}")
                     with col2:
                         st.write(f"📄 **{d['nombre']}**")
+                        if d.get("ocr_warning"):
+                            st.markdown('<div class="ocr-warning">⚠️ Este PDF parece no tener OCR (no se detectó texto).</div>', unsafe_allow_html=True)
+                    
                     documentos_finales.append({**d, "fecha_iso": normalizar_fecha_a_iso(f_input)})
                     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -205,7 +221,6 @@ elif choice == "🔍 Buscador":
 
     if query:
         try:
-            # Aquí se define la variable 'res' tras ejecutar la consulta
             c.execute("""SELECT id, tipo, numero, fecha_iso, nombre_archivo, paginas_json, pdf_blob 
                          FROM documentos WHERE contenido LIKE ? ORDER BY fecha_iso DESC""", (f'%{query}%',))
             res = c.fetchall()
@@ -214,7 +229,6 @@ elif choice == "🔍 Buscador":
                 st.write(f"Resultados encontrados: **{len(res)}**")
                 for r in res:
                     doc_id, tipo, num, fecha_iso, nombre, pags, blob = r
-                    # Corregido: Coincidencia exacta con los nombres de la carga
                     emoji = "🟢" if tipo == "Factura de Compra" else "🔵"
                     fecha_vis = formatear_fecha_visual(fecha_iso)
                     
@@ -247,16 +261,29 @@ elif choice == "🔍 Buscador":
                                                        index=0 if tipo=="Factura de Compra" else 1, key=f"t_{doc_id}")
                             edit_fecha = col_e2.text_input("Fecha (AAAA-MM-DD)", value=fecha_iso, key=f"f_edit_{doc_id}")
                             
+                            st.divider()
                             col_btn1, col_btn2 = st.columns(2)
+                            
                             if col_btn1.button("💾 Guardar Cambios", key=f"save_{doc_id}"):
                                 actualizar_documento(doc_id, edit_tipo, edit_nombre, edit_fecha)
                                 st.success("¡Datos actualizados!")
                                 st.rerun()
                             
-                            if col_btn2.button("🗑️ Eliminar Documento", key=f"del_{doc_id}"):
-                                eliminar_documento(doc_id)
-                                st.warning("Documento eliminado correctamente.")
-                                st.rerun()
+                            # Lógica de eliminación con confirmación
+                            if f"confirm_del_{doc_id}" not in st.session_state:
+                                if col_btn2.button("🗑️ Eliminar Documento", key=f"del_{doc_id}"):
+                                    st.session_state[f"confirm_del_{doc_id}"] = True
+                                    st.rerun()
+                            else:
+                                st.error("¿Estás seguro de eliminar este documento?")
+                                col_c1, col_c2 = st.columns(2)
+                                if col_c1.button("✅ Sí, eliminar definitivamente", key=f"confirm_del_btn_{doc_id}"):
+                                    eliminar_documento(doc_id)
+                                    del st.session_state[f"confirm_del_{doc_id}"]
+                                    st.rerun()
+                                if col_c2.button("❌ Cancelar", key=f"cancel_del_{doc_id}"):
+                                    del st.session_state[f"confirm_del_{doc_id}"]
+                                    st.rerun()
             else:
                 st.error("No se encontraron resultados.")
         except sqlite3.OperationalError as e:
