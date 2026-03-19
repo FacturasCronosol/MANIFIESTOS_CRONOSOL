@@ -21,31 +21,31 @@ st.set_page_config(
 # --- ESTILOS PERSONALIZADOS ---
 st.markdown("""
     <style>
-    /* BOTÓN GUARDAR - AZUL CELESTE PROFESIONAL */
-    div.stButton > button[key^="save_"] {
+    /* BOTÓN GUARDAR - AZUL */
+    div.stButton > button[key*="save_"] {
         background-color: #007bff !important;
-        color: white !important;
         border: 1px solid #0056b3 !important;
-        opacity: 1 !important;
+    }
+    
+    div.stButton > button[key*="save_"] p {
+        color: white !important;
+        font-weight: bold !important;
     }
 
     /* BOTÓN ELIMINAR - ROJO */
-    div.stButton > button[key^="del_"] {
+    div.stButton > button[key*="del_"] {
         background-color: #dc3545 !important;
-        color: white !important;
         border: 1px solid #a71d2a !important;
-        opacity: 1 !important;
     }
 
-    /* FORZAR TEXTO BLANCO */
-    div.stButton > button[key^="save_"] p, 
-    div.stButton > button[key^="del_"] p {
+    div.stButton > button[key*="del_"] p {
         color: white !important;
+        font-weight: bold !important;
     }
-    
-    /* Efectos al pasar el mouse */
-    button[key*="save_"]:hover { background-color: #0056b3 !important; border-color: #004085 !important; }
-    button[key*="del_"]:hover { background-color: #a71d2a !important; border-color: #721c24 !important; }
+
+    /* EFECTO HOVER (Opcional pero recomendado) */
+    div.stButton > button[key*="save_"]:hover { background-color: #0056b3 !important; }
+    div.stButton > button[key*="del_"]:hover { background-color: #a71d2a !important; }
     
     /* Botón Descargar (Verde - Para que no se pierda) */
     .stDownloadButton>button { 
