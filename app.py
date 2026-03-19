@@ -375,7 +375,6 @@ elif choice == "🔍 Buscador":
         res = c.fetchall()
         
         if res:
-            st.markdown(f'<div class="zip-download-container">', unsafe_allow_html=True)
             st.write(f"📂 **Acciones Masivas para {len(res)} resultados:**")
             cb1, cb2 = st.columns(2)
             
@@ -384,7 +383,6 @@ elif choice == "🔍 Buscador":
             
             zip_orig = generar_zip_blob([r[:7] for r in res], False)
             cb2.download_button("📥 Descargar Resultados Originales (.zip)", zip_orig, "busqueda_original.zip")
-            st.markdown('</div>', unsafe_allow_html=True)
             
             for r in res:
                 coinciden = [q for q in queries if q in r[7]]
