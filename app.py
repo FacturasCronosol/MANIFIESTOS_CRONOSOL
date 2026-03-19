@@ -95,44 +95,45 @@ st.markdown("""
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 8px;
+        gap: 10px;
         padding: 10px 0 4px 0;
         text-align: center;
     }
     .sidebar-brand img {
-        height: 64px;
-        width: 64px;
+        height: 96px;
+        width: 96px;
         object-fit: contain;
-        border-radius: 10px;
-        border: 1px solid #e0e0e0;
+        border-radius: 14px;
+        border: 1px solid rgba(255,255,255,0.15);
         background: white;
-        padding: 4px;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+        padding: 6px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.25);
     }
     .sidebar-brand-name {
         font-size: 1em;
         font-weight: 700;
-        color: #1a1a2e;
+        color: #f0f0f0;
         line-height: 1.3;
         word-break: break-word;
+        letter-spacing: 0.04em;
     }
     .sidebar-brand-icon {
-        font-size: 2.8em;
+        font-size: 3.5em;
     }
 
     /* Contadores en sidebar */
     .doc-counter-box {
-        background: #f0f4ff;
+        background: rgba(255,255,255,0.06);
         border-radius: 8px;
         padding: 10px 14px;
         margin-bottom: 8px;
         display: flex;
         justify-content: space-between;
         align-items: center;
-        border: 1px solid #d0d8f0;
+        border: 1px solid rgba(255,255,255,0.1);
     }
-    .doc-counter-label { font-size: 0.82em; color: #444; font-weight: 500; }
-    .doc-counter-num { font-size: 1.15em; font-weight: 800; color: #1a1a2e; }
+    .doc-counter-label { font-size: 0.82em; color: #c0c0c0; font-weight: 500; }
+    .doc-counter-num { font-size: 1.15em; font-weight: 800; color: #f0f0f0; }
 
     /* Paginación */
     .pagination-info {
