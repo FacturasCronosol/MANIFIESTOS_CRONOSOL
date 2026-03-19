@@ -506,8 +506,6 @@ elif choice == "📤 Carga Masiva":
         
         docs_finales = []
         for i, d in enumerate(st.session_state.pendientes):
-            card_style = "upload-card" if d['ocr'] else "upload-card-error"
-            st.markdown(f'<div class="{card_style}">', unsafe_allow_html=True)
             c_up1, c_up2 = st.columns([1, 2])
             with c_up1:
                 if d['ocr']:
@@ -524,7 +522,7 @@ elif choice == "📤 Carga Masiva":
                     st.caption(f"Tipo asignado: {d['tipo']}")
             if d['ocr']:
                 docs_finales.append({**d, "fecha": new_f.strftime("%Y-%m-%d")})
-            st.markdown('</div>', unsafe_allow_html=True)
+            st.divider()
 
         if hay_errores_ocr:
             st.warning("Debe corregir o eliminar los archivos sin OCR para poder continuar.")
