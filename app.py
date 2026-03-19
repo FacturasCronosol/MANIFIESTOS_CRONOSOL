@@ -23,15 +23,11 @@ st.markdown("""
     <style>
     .stButton>button { width: 100%; border-radius: 8px; height: 3.5em; font-weight: bold; }
     
-    /* Botón Guardar (Verde) */
-    div[data-testid="stVerticalBlock"] div[data-testid="stHorizontalBlock"] .stButton button[key*="save_"] {
-        background-color: #28a745 !important; color: white !important; border: none;
-    }
-
-    /* Botón Eliminar (Rojo) */
-    div[data-testid="stVerticalBlock"] div[data-testid="stHorizontalBlock"] .stButton button[key*="del_"] {
-        background-color: #dc3545 !important; color: white !important; border: none;
-    }
+    /* Botones editor de documento */
+    [class*="st-key-del_"] button   { background-color: #dc3545 !important; color: white !important; border: none !important; }
+    [class*="st-key-save_"] button  { background-color: #28a745 !important; color: white !important; border: none !important; }
+    [class*="st-key-c_ok_"] button  { background-color: #dc3545 !important; color: white !important; border: none !important; }
+    [class*="st-key-c_no_"] button  { background-color: #007bff !important; color: white !important; border: none !important; }
     
     .stDownloadButton>button { background-color: #007bff !important; color: white !important; }
 
