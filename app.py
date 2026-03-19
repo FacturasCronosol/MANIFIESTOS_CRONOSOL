@@ -137,6 +137,18 @@ st.markdown("""
         font-size: 0.9em;
         margin: 8px 0 4px 0;
     }
+
+    /* Toggles de filtro en Buscador */
+    .toggle-activo button {
+        background-color: #1a1a2e !important;
+        color: white !important;
+        border: 2px solid #1a1a2e !important;
+    }
+    .toggle-inactivo button {
+        background-color: white !important;
+        color: #1a1a2e !important;
+        border: 2px solid #d0d0d0 !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -382,6 +394,7 @@ if 'uploader_id' not in st.session_state: st.session_state.uploader_id = 0
 if 'search_results' not in st.session_state: st.session_state.search_results = None
 if 'last_query' not in st.session_state: st.session_state.last_query = ""
 if 'search_page' not in st.session_state: st.session_state.search_page = 0
+if 'search_filter' not in st.session_state: st.session_state.search_filter = "Todos"
 
 RESULTADOS_POR_PAGINA = 10
 
@@ -580,7 +593,7 @@ elif choice == "📂 Documentos":
         st.info("No hay documentos registrados aún en esta categoría.")
 
 # =============================================
-# MÓDULO: BUSCADOR (con caché + paginación)
+# MÓDULO: BUSCADOR (con caché + paginación + filtro)
 # =============================================
 elif choice == "🔍 Buscador":
     render_company_header()
@@ -594,49 +607,76 @@ elif choice == "🔍 Buscador":
         if query_in != st.session_state.last_query:
             st.session_state.search_results = ejecutar_busqueda(queries)
             st.session_state.last_query = query_in
-            st.session_state.search_page = 0  # Reset a primera página al nueva búsqueda
+            st.session_state.search_page = 0
+            st.session_state.search_filter = "Todos"
 
-        res = st.session_state.search_results
+        res_completo = st.session_state.search_results
 
-        if res:
-            total_resultados = len(res)
-            total_paginas = (total_resultados + RESULTADOS_POR_PAGINA - 1) // RESULTADOS_POR_PAGINA
-            pagina_actual = st.session_state.search_page
-            inicio = pagina_actual * RESULTADOS_POR_PAGINA
-            fin = inicio + RESULTADOS_POR_PAGINA
-            res_pagina = res[inicio:fin]
-
-            # Acciones masivas (sobre TODOS los resultados)
-            st.markdown('<div class="zip-download-container">', unsafe_allow_html=True)
-            st.write(f"📂 **{total_resultados} resultado(s) encontrado(s)** — Mostrando {inicio+1}–{min(fin, total_resultados)}")
-            cb1, cb2 = st.columns(2)
-            zip_res = generar_zip_blob([r[:7] for r in res], True, queries)
-            cb1.download_button("📥 Descargar Resultados Subrayados (.zip)", zip_res, "busqueda_resaltada.zip")
-            zip_orig = generar_zip_blob([r[:7] for r in res], False)
-            cb2.download_button("📥 Descargar Resultados Originales (.zip)", zip_orig, "busqueda_original.zip")
-            st.markdown('</div>', unsafe_allow_html=True)
-
-            # Resultados de la página actual
-            for r in res_pagina:
-                coinciden = [q for q in queries if q in r[7]]
-                fecha_v = datetime.strptime(r[3], "%Y-%m-%d").strftime("%d/%m/%Y")
-                with st.expander(f"🔍 {fecha_v} | {r[4]} (Coincide con: {', '.join(coinciden)})"):
-                    render_editor_documento(r[:7], queries, es_inventario=False)
-
-            # Controles de paginación
-            if total_paginas > 1:
-                st.divider()
-                st.markdown(f'<div class="pagination-info">Página {pagina_actual + 1} de {total_paginas}</div>', unsafe_allow_html=True)
-                nav1, nav2, nav3 = st.columns([1, 2, 1])
-                with nav1:
-                    if pagina_actual > 0:
-                        if st.button("← Anterior", use_container_width=True):
-                            st.session_state.search_page -= 1
+        if res_completo:
+            # --- TOGGLES DE FILTRO ---
+            OPCIONES_FILTRO = ["Todos", "Factura de Compra", "Manifiesto de Aduana"]
+            st.write("**Filtrar por tipo:**")
+            tcol1, tcol2, tcol3 = st.columns([1, 1.6, 1.8])
+            for col, opcion in zip([tcol1, tcol2, tcol3], OPCIONES_FILTRO):
+                estilo = "toggle-activo" if st.session_state.search_filter == opcion else "toggle-inactivo"
+                with col:
+                    st.markdown(f'<div class="{estilo}">', unsafe_allow_html=True)
+                    if st.button(opcion, key=f"toggle_{opcion}", use_container_width=True):
+                        if st.session_state.search_filter != opcion:
+                            st.session_state.search_filter = opcion
+                            st.session_state.search_page = 0
                             st.rerun()
-                with nav3:
-                    if pagina_actual < total_paginas - 1:
-                        if st.button("Siguiente →", use_container_width=True):
-                            st.session_state.search_page += 1
-                            st.rerun()
+                    st.markdown('</div>', unsafe_allow_html=True)
+
+            # Aplicar filtro en memoria
+            filtro_activo = st.session_state.search_filter
+            if filtro_activo == "Todos":
+                res = res_completo
+            else:
+                res = [r for r in res_completo if r[1] == filtro_activo]
+
+            if res:
+                total_resultados = len(res)
+                total_paginas = (total_resultados + RESULTADOS_POR_PAGINA - 1) // RESULTADOS_POR_PAGINA
+                pagina_actual = st.session_state.search_page
+                inicio = pagina_actual * RESULTADOS_POR_PAGINA
+                fin = inicio + RESULTADOS_POR_PAGINA
+                res_pagina = res[inicio:fin]
+
+                # Acciones masivas (sobre resultados filtrados)
+                st.markdown('<div class="zip-download-container">', unsafe_allow_html=True)
+                label_filtro = f" · {filtro_activo}" if filtro_activo != "Todos" else ""
+                st.write(f"📂 **{total_resultados} resultado(s){label_filtro}** — Mostrando {inicio+1}–{min(fin, total_resultados)}")
+                cb1, cb2 = st.columns(2)
+                zip_res = generar_zip_blob([r[:7] for r in res], True, queries)
+                cb1.download_button("📥 Descargar Resultados Subrayados (.zip)", zip_res, "busqueda_resaltada.zip")
+                zip_orig = generar_zip_blob([r[:7] for r in res], False)
+                cb2.download_button("📥 Descargar Resultados Originales (.zip)", zip_orig, "busqueda_original.zip")
+                st.markdown('</div>', unsafe_allow_html=True)
+
+                # Resultados de la página actual
+                for r in res_pagina:
+                    coinciden = [q for q in queries if q in r[7]]
+                    fecha_v = datetime.strptime(r[3], "%Y-%m-%d").strftime("%d/%m/%Y")
+                    with st.expander(f"🔍 {fecha_v} | {r[4]} (Coincide con: {', '.join(coinciden)})"):
+                        render_editor_documento(r[:7], queries, es_inventario=False)
+
+                # Controles de paginación
+                if total_paginas > 1:
+                    st.divider()
+                    st.markdown(f'<div class="pagination-info">Página {pagina_actual + 1} de {total_paginas}</div>', unsafe_allow_html=True)
+                    nav1, nav2, nav3 = st.columns([1, 2, 1])
+                    with nav1:
+                        if pagina_actual > 0:
+                            if st.button("← Anterior", use_container_width=True):
+                                st.session_state.search_page -= 1
+                                st.rerun()
+                    with nav3:
+                        if pagina_actual < total_paginas - 1:
+                            if st.button("Siguiente →", use_container_width=True):
+                                st.session_state.search_page += 1
+                                st.rerun()
+            else:
+                st.info(f"No hay resultados de tipo **{filtro_activo}** para esta búsqueda.")
         else:
             st.warning("No se encontraron coincidencias para los términos ingresados.")
