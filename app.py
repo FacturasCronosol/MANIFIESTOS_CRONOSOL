@@ -177,7 +177,6 @@ def render_editor_documento(r, search_terms=[], es_inventario=False):
                     p_encontradas.append(int(p))
         
         if p_encontradas:
-            # Usamos "page-info" para el azul celeste
             st.markdown(f'<div class="page-info">📍 Coincidencias en página(s): {", ".join(map(str, sorted(p_encontradas)))}</div>', unsafe_allow_html=True)
         
         p_ini = min(p_encontradas) if p_encontradas else 1
@@ -192,45 +191,42 @@ def render_editor_documento(r, search_terms=[], es_inventario=False):
         else:
             st.components.v1.html(abrir_pdf_js(blob, p_ini, f"orig_{doc_id}", "Ver PDF Original", "#007bff"), height=65)
 
-  with t2:
-        # Asegúrate de que esta línea esté justo debajo de la 'w' de 'with t1'
+    with t2:
         edit_nombre = st.text_input("Nombre del archivo", value=nombre, key=f"edit_n_{doc_id}")
         col_ed1, col_ed2 = st.columns(2)
         edit_tipo = col_ed1.selectbox("Tipo de Documento", ["Factura de Compra", "Manifiesto de Aduana"], index=0 if "Factura" in tipo else 1, key=f"edit_t_{doc_id}")
         
-        try: 
+        try:
             f_dt = datetime.strptime(fecha_iso, "%Y-%m-%d").date()
-        except: 
+        except:
             f_dt = datetime.now().date()
-            
+        
         edit_fecha = col_ed2.date_input("Fecha", value=f_dt, key=f"edit_f_{doc_id}")
         
         st.divider()
 
-        # --- SÁNDWICH DE COLOR ---
+        # --- CONTENEDOR PARA COLORES ---
         st.markdown('<div class="zona-critica">', unsafe_allow_html=True)
         
         cb1, cb2 = st.columns(2)
         
-        # 1. Lógica del Botón Eliminar
         if not st.session_state.get(f"confirm_del_{doc_id}", False):
-            if cb1.button("🗑️ Eliminar Documento", key=f"del_main_{doc_id}_final_v5"):
+            if cb1.button("🗑️ Eliminar Documento", key=f"del_main_{doc_id}_final"):
                 st.session_state[f"confirm_del_{doc_id}"] = True
                 st.rerun()
         else:
             st.error("¿Confirmar eliminación definitiva?")
             cc1, cc2 = st.columns(2)
-            if cc1.button("✅ SI, ELIMINAR", key=f"del_confirm_yes_{doc_id}_final_v5"):
+            if cc1.button("✅ SI, ELIMINAR", key=f"del_confirm_yes_{doc_id}_final"):
                 eliminar_documento(doc_id)
                 st.session_state[f"confirm_del_{doc_id}"] = False
                 st.success("Eliminado")
                 st.rerun()
-            if cc2.button("❌ NO, CONSERVAR", key=f"del_confirm_no_{doc_id}_final_v5"):
+            if cc2.button("❌ NO, CONSERVAR", key=f"del_confirm_no_{doc_id}_final"):
                 st.session_state[f"confirm_del_{doc_id}"] = False
                 st.rerun()
 
-        # 2. Botón Guardar
-        if cb2.button("💾 Guardar Cambios", key=f"save_{doc_id}_final_v5"):
+        if cb2.button("💾 Guardar Cambios", key=f"save_{doc_id}_final"):
             c.execute("UPDATE documentos SET tipo=?, nombre_archivo=?, fecha_iso=? WHERE id=?", 
                      (edit_tipo, edit_nombre, edit_fecha.strftime("%Y-%m-%d"), doc_id))
             conn.commit()
