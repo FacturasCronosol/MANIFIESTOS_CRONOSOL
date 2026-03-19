@@ -138,17 +138,6 @@ st.markdown("""
         margin: 8px 0 4px 0;
     }
 
-    /* Toggles de filtro en Buscador */
-    .toggle-activo button {
-        background-color: #1a1a2e !important;
-        color: white !important;
-        border: 2px solid #1a1a2e !important;
-    }
-    .toggle-inactivo button {
-        background-color: white !important;
-        color: #1a1a2e !important;
-        border: 2px solid #d0d0d0 !important;
-    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -394,7 +383,6 @@ if 'uploader_id' not in st.session_state: st.session_state.uploader_id = 0
 if 'search_results' not in st.session_state: st.session_state.search_results = None
 if 'last_query' not in st.session_state: st.session_state.last_query = ""
 if 'search_page' not in st.session_state: st.session_state.search_page = 0
-if 'search_filter' not in st.session_state: st.session_state.search_filter = "Todos"
 
 RESULTADOS_POR_PAGINA = 10
 
@@ -608,32 +596,31 @@ elif choice == "🔍 Buscador":
             st.session_state.search_results = ejecutar_busqueda(queries)
             st.session_state.last_query = query_in
             st.session_state.search_page = 0
-            st.session_state.search_filter = "Todos"
 
         res_completo = st.session_state.search_results
 
         if res_completo:
-            # --- TOGGLES DE FILTRO ---
-            OPCIONES_FILTRO = ["Todos", "Factura de Compra", "Manifiesto de Aduana"]
+            # --- SWITCHES DE FILTRO ---
             st.write("**Filtrar por tipo:**")
-            tcol1, tcol2, tcol3 = st.columns([1, 1.6, 1.8])
-            for col, opcion in zip([tcol1, tcol2, tcol3], OPCIONES_FILTRO):
-                estilo = "toggle-activo" if st.session_state.search_filter == opcion else "toggle-inactivo"
-                with col:
-                    st.markdown(f'<div class="{estilo}">', unsafe_allow_html=True)
-                    if st.button(opcion, key=f"toggle_{opcion}", use_container_width=True):
-                        if st.session_state.search_filter != opcion:
-                            st.session_state.search_filter = opcion
-                            st.session_state.search_page = 0
-                            st.rerun()
-                    st.markdown('</div>', unsafe_allow_html=True)
+            sw1, sw2, _ = st.columns([1.4, 1.8, 3])
+            with sw1:
+                mostrar_facturas = st.toggle("Facturas de Compra", value=True, key="sw_facturas")
+            with sw2:
+                mostrar_manifiestos = st.toggle("Manifiestos de Aduana", value=True, key="sw_manifiestos")
 
-            # Aplicar filtro en memoria
-            filtro_activo = st.session_state.search_filter
-            if filtro_activo == "Todos":
+            # Aplicar filtro en memoria según estado de los switches
+            if mostrar_facturas and mostrar_manifiestos:
                 res = res_completo
+                label_filtro = ""
+            elif mostrar_facturas:
+                res = [r for r in res_completo if r[1] == "Factura de Compra"]
+                label_filtro = " · Facturas de Compra"
+            elif mostrar_manifiestos:
+                res = [r for r in res_completo if r[1] == "Manifiesto de Aduana"]
+                label_filtro = " · Manifiestos de Aduana"
             else:
-                res = [r for r in res_completo if r[1] == filtro_activo]
+                res = []
+                label_filtro = ""
 
             if res:
                 total_resultados = len(res)
@@ -645,7 +632,6 @@ elif choice == "🔍 Buscador":
 
                 # Acciones masivas (sobre resultados filtrados)
                 st.markdown('<div class="zip-download-container">', unsafe_allow_html=True)
-                label_filtro = f" · {filtro_activo}" if filtro_activo != "Todos" else ""
                 st.write(f"📂 **{total_resultados} resultado(s){label_filtro}** — Mostrando {inicio+1}–{min(fin, total_resultados)}")
                 cb1, cb2 = st.columns(2)
                 zip_res = generar_zip_blob([r[:7] for r in res], True, queries)
@@ -677,6 +663,9 @@ elif choice == "🔍 Buscador":
                                 st.session_state.search_page += 1
                                 st.rerun()
             else:
-                st.info(f"No hay resultados de tipo **{filtro_activo}** para esta búsqueda.")
+                if not mostrar_facturas and not mostrar_manifiestos:
+                    st.warning("⚠️ Activa al menos un filtro para ver resultados.")
+                else:
+                    st.info(f"No hay resultados{label_filtro} para esta búsqueda.")
         else:
             st.warning("No se encontraron coincidencias para los términos ingresados.")
