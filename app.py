@@ -231,25 +231,27 @@ def render_editor_documento(r, search_terms=[], es_inventario=False):
         st.divider()
         cb1, cb2 = st.columns(2)
         
-        if f"confirm_del_{doc_id}" not in st.session_state:
-            # Botón Eliminar
-    if cb1.button("🗑️ Eliminar Documento", key=f"del_{doc_id}"):
-        st.session_state[f"confirm_del_{doc_id}"] = True
+        # 1. Lógica del Botón Eliminar
+        if not st.session_state.get(f"confirm_del_{doc_id}", False):
+            # Solo mostramos el botón si NO estamos en modo confirmación
+            if cb1.button("🗑️ Eliminar Documento", key=f"del_main_{doc_id}"):
+                st.session_state[f"confirm_del_{doc_id}"] = True
+                st.rerun()
+        else:
+            # Si estamos en modo confirmación, mostramos la alerta y los botones SI/NO
+            st.error("¿Confirmar eliminación definitiva?")
+            cc1, cc2 = st.columns(2)
+            if cc1.button("✅ SI, ELIMINAR", key=f"del_confirm_yes_{doc_id}"):
+                eliminar_documento(doc_id)
+                st.session_state[f"confirm_del_{doc_id}"] = False
+                st.success("Eliminado")
+                st.rerun()
+            if cc2.button("❌ NO, CONSERVAR", key=f"del_confirm_no_{doc_id}"):
+                st.session_state[f"confirm_del_{doc_id}"] = False
+                st.rerun()
 
-    # Lógica de Confirmación (Esto evita el error de duplicados)
-    if st.session_state.get(f"confirm_del_{doc_id}", False):
-        st.error("¿Confirmar eliminación definitiva?")
-        cc1, cc2 = st.columns(2)
-        if cc1.button("✅ SI, ELIMINAR", key=f"del_confirm_yes_{doc_id}"): # Key única
-            eliminar_documento(doc_id)
-            st.success("Eliminado")
-            st.rerun()
-        if cc2.button("❌ NO, CONSERVAR", key=f"del_confirm_no_{doc_id}"): # Key única
-            st.session_state[f"confirm_del_{doc_id}"] = False
-            st.rerun()
-
-    # Botón Guardar
-    if cb2.button("💾 Guardar Cambios", key=f"save_{doc_id}"):
+        # 2. Botón Guardar (Siempre visible o fuera del bloque de confirmación)
+        if cb2.button("💾 Guardar Cambios", key=f"save_{doc_id}"):
             c.execute("UPDATE documentos SET tipo=?, nombre_archivo=?, fecha_iso=? WHERE id=?", 
                      (edit_tipo, edit_nombre, edit_fecha.strftime("%Y-%m-%d"), doc_id))
             conn.commit()
