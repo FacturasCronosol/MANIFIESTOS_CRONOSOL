@@ -21,41 +21,33 @@ st.set_page_config(
 # --- ESTILOS PERSONALIZADOS ---
 st.markdown("""
     <style>
-    /* 1. BOTÓN GUARDAR - AZUL (Quitamos el '>' para que sea más flexible) */
-    div.stButton button[key*="save_"] {
-        background-color: #007bff !important;
-        color: white !important;
-        border: 1px solid #0056b3 !important;
-        border-radius: 8px !important;
-        height: 3.5em !important;
-        width: 100% !important;
-    }
-    
-    /* Forzar el texto blanco dentro del botón de guardar */
-    div.stButton button[key*="save_"] p {
-        color: white !important;
-        font-weight: bold !important;
-    }
-
-    /* 2. BOTÓN ELIMINAR - ROJO */
-    div.stButton button[key*="del_"] {
+    /* 1. La primera columna (Botón Eliminar) -> ROJO */
+    [data-testid="stHorizontalBlock"] div:nth-child(1) button {
         background-color: #dc3545 !important;
         color: white !important;
         border: 1px solid #a71d2a !important;
         border-radius: 8px !important;
         height: 3.5em !important;
-        width: 100% !important;
     }
 
-    /* Forzar el texto blanco dentro del botón de eliminar */
-    div.stButton button[key*="del_"] p {
+    /* 2. La segunda columna (Botón Guardar) -> AZUL */
+    [data-testid="stHorizontalBlock"] div:nth-child(2) button {
+        background-color: #007bff !important;
+        color: white !important;
+        border: 1px solid #0056b3 !important;
+        border-radius: 8px !important;
+        height: 3.5em !important;
+    }
+
+    /* Forzar que el texto (la etiqueta p) sea blanco en ambos */
+    [data-testid="stHorizontalBlock"] button p {
         color: white !important;
         font-weight: bold !important;
     }
 
-    /* 3. EFECTOS HOVER */
-    div.stButton button[key*="save_"]:hover { background-color: #0056b3 !important; border-color: #004085 !important; }
-    div.stButton button[key*="del_"]:hover { background-color: #a71d2a !important; border-color: #721c24 !important; }
+    /* Efectos al pasar el mouse */
+    [data-testid="stHorizontalBlock"] div:nth-child(1) button:hover { background-color: #a71d2a !important; }
+    [data-testid="stHorizontalBlock"] div:nth-child(2) button:hover { background-color: #0056b3 !important; }
     
     /* 4. BOTÓN DESCARGAR (VERDE) */
     .stDownloadButton button { 
