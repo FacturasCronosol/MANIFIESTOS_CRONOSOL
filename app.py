@@ -54,7 +54,7 @@ st.markdown("""
         border-left: 5px solid #721c24; 
         font-weight: bold; 
         margin-bottom: 10px; 
-        color: #721c24; 
+        color: #73000b; 
     }
     
     .upload-card { border: 1px solid #ddd; padding: 15px; border-radius: 10px; margin-bottom: 15px; background-color: #ffffff; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
