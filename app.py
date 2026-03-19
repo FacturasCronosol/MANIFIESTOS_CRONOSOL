@@ -387,6 +387,7 @@ if 'uploader_id' not in st.session_state: st.session_state.uploader_id = 0
 if 'search_results' not in st.session_state: st.session_state.search_results = None
 if 'last_query' not in st.session_state: st.session_state.last_query = ""
 if 'search_page' not in st.session_state: st.session_state.search_page = 0
+if 'inv_page' not in st.session_state: st.session_state.inv_page = 0
 
 RESULTADOS_POR_PAGINA = 10
 
@@ -566,27 +567,64 @@ elif choice == "📂 Documentos":
     col_v1, col_v2 = st.columns(2)
     f_tipo = col_v1.selectbox("Filtrar por tipo:", ["Todos", "Factura de Compra", "Manifiesto de Aduana"])
     f_order = col_v2.selectbox("Ordenar por:", ["Más recientes primero", "Más antiguos primero"])
-    
-    order_sql = "DESC" if f_order == "Más recientes primero" else "ASC"
-    if f_tipo == "Todos":
-        c.execute(f"SELECT id, tipo, numero, fecha_iso, nombre_archivo, paginas_json, pdf_blob FROM documentos ORDER BY fecha_iso {order_sql}")
-    else:
-        c.execute(f"SELECT id, tipo, numero, fecha_iso, nombre_archivo, paginas_json, pdf_blob FROM documentos WHERE tipo=? ORDER BY fecha_iso {order_sql}", (f_tipo,))
-    
-    docs = c.fetchall()
 
-    if docs:
+    # Reset página al cambiar filtros
+    filtro_key = f"{f_tipo}_{f_order}"
+    if 'inv_filtro_key' not in st.session_state or st.session_state.inv_filtro_key != filtro_key:
+        st.session_state.inv_page = 0
+        st.session_state.inv_filtro_key = filtro_key
+
+    order_sql = "DESC" if f_order == "Más recientes primero" else "ASC"
+    INV_POR_PAGINA = 100
+
+    # Contar total para paginación y ZIP (sin LIMIT)
+    if f_tipo == "Todos":
+        c.execute(f"SELECT COUNT(*) FROM documentos")
+        total_inv = c.fetchone()[0]
+        c.execute(f"SELECT id, tipo, numero, fecha_iso, nombre_archivo, paginas_json, pdf_blob FROM documentos ORDER BY fecha_iso {order_sql}")
+        docs_todos = c.fetchall()
+    else:
+        c.execute(f"SELECT COUNT(*) FROM documentos WHERE tipo=?", (f_tipo,))
+        total_inv = c.fetchone()[0]
+        c.execute(f"SELECT id, tipo, numero, fecha_iso, nombre_archivo, paginas_json, pdf_blob FROM documentos WHERE tipo=? ORDER BY fecha_iso {order_sql}", (f_tipo,))
+        docs_todos = c.fetchall()
+
+    if docs_todos:
+        # ZIP siempre sobre todos los resultados del filtro activo
         st.markdown('<div class="zip-download-container">', unsafe_allow_html=True)
         label_zip = f"Descargar {f_tipo}" if f_tipo != "Todos" else "Descargar Todo el Inventario"
-        zip_data = generar_zip_blob(docs)
-        st.write(f"📦 **Acciones para {len(docs)} documentos encontrados:**")
+        zip_data = generar_zip_blob(docs_todos)
+        st.write(f"📦 **Acciones para {total_inv} documentos encontrados:**")
         st.download_button(f"📥 {label_zip} (.zip)", zip_data, f"{f_tipo.lower().replace(' ','_')}.zip")
         st.markdown('</div>', unsafe_allow_html=True)
 
-        for r in docs:
+        # Slicing para la página actual
+        inv_pagina_actual = st.session_state.inv_page
+        inv_total_paginas = (total_inv + INV_POR_PAGINA - 1) // INV_POR_PAGINA
+        inv_inicio = inv_pagina_actual * INV_POR_PAGINA
+        inv_fin = inv_inicio + INV_POR_PAGINA
+        docs_pagina = docs_todos[inv_inicio:inv_fin]
+
+        for r in docs_pagina:
             fecha_v = datetime.strptime(r[3], "%Y-%m-%d").strftime("%d/%m/%Y")
             with st.expander(f"{fecha_v} | {r[1]} - {r[4]}"):
                 render_editor_documento(r, es_inventario=True)
+
+        # Controles de paginación
+        if inv_total_paginas > 1:
+            st.divider()
+            st.markdown(f'<div class="pagination-info">Página {inv_pagina_actual + 1} de {inv_total_paginas} — Mostrando {inv_inicio + 1}–{min(inv_fin, total_inv)} de {total_inv}</div>', unsafe_allow_html=True)
+            pag_col1, pag_col2, pag_col3 = st.columns([1, 2, 1])
+            with pag_col1:
+                if inv_pagina_actual > 0:
+                    if st.button("← Anterior", key="inv_prev", use_container_width=True):
+                        st.session_state.inv_page -= 1
+                        st.rerun()
+            with pag_col3:
+                if inv_pagina_actual < inv_total_paginas - 1:
+                    if st.button("Siguiente →", key="inv_next", use_container_width=True):
+                        st.session_state.inv_page += 1
+                        st.rerun()
     else:
         st.info("No hay documentos registrados aún en esta categoría.")
 
