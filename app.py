@@ -182,7 +182,7 @@ def render_editor_documento(r, search_terms=[], es_inventario=False):
         
         if p_encontradas:
             # Usamos "page-info" para el azul celeste
-        st.markdown(f'<div class="page-info">📍 Coincidencias en página(s): {", ".join(map(str, sorted(p_encontradas)))}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="page-info">📍 Coincidencias en página(s): {", ".join(map(str, sorted(p_encontradas)))}</div>', unsafe_allow_html=True)
         
         p_ini = min(p_encontradas) if p_encontradas else 1
         
@@ -411,4 +411,4 @@ elif choice == "🔍 Buscador":
                     render_editor_documento(r[:7], queries, es_inventario=False)
         else:
             # Usamos "error-alert" para el fondo rojo
-        st.markdown('<div class="error-alert">❌ No se encontraron coincidencias para los términos ingresados.</div>', unsafe_allow_html=True)
+            st.markdown('<div class="error-alert">❌ No se encontraron coincidencias para los términos ingresados.</div>', unsafe_allow_html=True)
