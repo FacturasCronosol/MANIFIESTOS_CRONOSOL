@@ -47,6 +47,96 @@ st.markdown("""
         border: 1px solid #e9ecef;
         margin-bottom: 25px;
     }
+
+    /* Header de empresa en el buscador */
+    .company-header {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        background: linear-gradient(90deg, #f8f9fa 0%, #ffffff 100%);
+        border: 1px solid #e0e0e0;
+        border-radius: 12px;
+        padding: 16px 24px;
+        margin-bottom: 24px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+    .company-header img {
+        height: 56px;
+        width: 56px;
+        object-fit: contain;
+        border-radius: 8px;
+        border: 1px solid #e9ecef;
+        background: white;
+        padding: 4px;
+    }
+    .company-header-text h2 {
+        margin: 0 0 2px 0;
+        font-size: 1.4em;
+        font-weight: 700;
+        color: #1a1a2e;
+        line-height: 1.2;
+    }
+    .company-header-text span {
+        font-size: 0.85em;
+        color: #6c757d;
+        font-weight: 400;
+    }
+    .company-header-icon {
+        font-size: 2.8em;
+        line-height: 1;
+    }
+
+    /* Sidebar branding */
+    .sidebar-brand {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 0 4px 0;
+        text-align: center;
+    }
+    .sidebar-brand img {
+        height: 64px;
+        width: 64px;
+        object-fit: contain;
+        border-radius: 10px;
+        border: 1px solid #e0e0e0;
+        background: white;
+        padding: 4px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+    }
+    .sidebar-brand-name {
+        font-size: 1em;
+        font-weight: 700;
+        color: #1a1a2e;
+        line-height: 1.3;
+        word-break: break-word;
+    }
+    .sidebar-brand-icon {
+        font-size: 2.8em;
+    }
+
+    /* Contadores en sidebar */
+    .doc-counter-box {
+        background: #f0f4ff;
+        border-radius: 8px;
+        padding: 10px 14px;
+        margin-bottom: 8px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border: 1px solid #d0d8f0;
+    }
+    .doc-counter-label { font-size: 0.82em; color: #444; font-weight: 500; }
+    .doc-counter-num { font-size: 1.15em; font-weight: 800; color: #1a1a2e; }
+
+    /* Paginación */
+    .pagination-info {
+        text-align: center;
+        color: #6c757d;
+        font-size: 0.9em;
+        margin: 8px 0 4px 0;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -57,10 +147,31 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS documentos 
                  (id TEXT PRIMARY KEY, tipo TEXT, numero TEXT, fecha_iso TEXT, 
                   proveedor TEXT, contenido TEXT, nombre_archivo TEXT, pdf_blob BLOB, paginas_json TEXT)''')
+    # Tabla de configuración de empresa
+    c.execute('''CREATE TABLE IF NOT EXISTS config_empresa
+                 (clave TEXT PRIMARY KEY, valor BLOB)''')
     conn.commit()
     return conn, c
 
 conn, c = init_db()
+
+# --- FUNCIONES DE CONFIGURACIÓN DE EMPRESA ---
+
+def guardar_config(clave, valor):
+    c.execute("INSERT OR REPLACE INTO config_empresa (clave, valor) VALUES (?, ?)", (clave, valor))
+    conn.commit()
+
+def obtener_config(clave):
+    c.execute("SELECT valor FROM config_empresa WHERE clave=?", (clave,))
+    row = c.fetchone()
+    return row[0] if row else None
+
+def obtener_contadores():
+    c.execute("SELECT tipo, COUNT(*) FROM documentos GROUP BY tipo")
+    rows = c.fetchall()
+    total = sum(r[1] for r in rows)
+    mapa = {r[0]: r[1] for r in rows}
+    return total, mapa
 
 # --- FUNCIONES DE PROCESAMIENTO ---
 
@@ -115,13 +226,90 @@ def generar_zip_blob(resultados, usar_resaltado=False, queries=[]):
     buf = BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         for r in resultados:
-            # r[4] es nombre_archivo, r[6] es pdf_blob
             nombre = r[4] if r[4].lower().endswith(".pdf") else f"{r[4]}.pdf"
             blob = r[6]
             if usar_resaltado and queries:
                 blob = resaltar_pdf_multiple(blob, queries)
             zf.writestr(nombre, blob)
     return buf.getvalue()
+
+# --- FUNCIÓN DE BÚSQUEDA CON CACHÉ EN SESSION STATE ---
+
+def ejecutar_busqueda(queries):
+    """Ejecuta la búsqueda y guarda resultados en session_state para evitar re-queries al paginar."""
+    sql_cond = " OR ".join(["contenido LIKE ?" for _ in queries])
+    params = [f"%{q}%" for q in queries]
+    c.execute(
+        f"SELECT id, tipo, numero, fecha_iso, nombre_archivo, paginas_json, pdf_blob, contenido "
+        f"FROM documentos WHERE {sql_cond} ORDER BY fecha_iso DESC",
+        params
+    )
+    return c.fetchall()
+
+# --- COMPONENTES DE BRANDING ---
+
+def render_company_header():
+    """Header de empresa para el módulo de Buscador."""
+    nombre = obtener_config("nombre_empresa") or ""
+    logo_blob = obtener_config("logo_empresa")
+
+    if not nombre and not logo_blob:
+        return  # Sin configuración, no mostrar nada
+
+    if logo_blob:
+        logo_b64 = base64.b64encode(logo_blob).decode('utf-8')
+        logo_html = f'<img src="data:image/png;base64,{logo_b64}" alt="Logo"/>'
+    else:
+        logo_html = '<div class="company-header-icon">🏢</div>'
+
+    nombre_html = f"<h2>{nombre}</h2><span>Sistema de Trazabilidad Aduanera</span>" if nombre else "<h2>Mi Empresa</h2><span>Sistema de Trazabilidad Aduanera</span>"
+
+    st.markdown(f"""
+    <div class="company-header">
+        {logo_html}
+        <div class="company-header-text">
+            {nombre_html}
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+def render_sidebar_brand():
+    """Branding en el sidebar: logo + nombre + contadores."""
+    nombre = obtener_config("nombre_empresa") or ""
+    logo_blob = obtener_config("logo_empresa")
+    total, mapa = obtener_contadores()
+
+    # Logo o ícono
+    if logo_blob:
+        logo_b64 = base64.b64encode(logo_blob).decode('utf-8')
+        logo_html = f'<img src="data:image/png;base64,{logo_b64}" alt="Logo"/>'
+    else:
+        logo_html = '<div class="sidebar-brand-icon">🛡️</div>'
+
+    nombre_html = f'<div class="sidebar-brand-name">{nombre}</div>' if nombre else ""
+
+    st.markdown(f"""
+    <div class="sidebar-brand">
+        {logo_html}
+        {nombre_html}
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Contadores
+    st.markdown(f"""
+    <div class="doc-counter-box">
+        <span class="doc-counter-label">📄 Total documentos</span>
+        <span class="doc-counter-num">{total}</span>
+    </div>
+    <div class="doc-counter-box">
+        <span class="doc-counter-label">🧾 Facturas de Compra</span>
+        <span class="doc-counter-num">{mapa.get('Factura de Compra', 0)}</span>
+    </div>
+    <div class="doc-counter-box">
+        <span class="doc-counter-label">📋 Manifestos de Aduana</span>
+        <span class="doc-counter-num">{mapa.get('Manifiesto de Aduana', 0)}</span>
+    </div>
+    """, unsafe_allow_html=True)
 
 # --- INTERFAZ DE EDICIÓN ---
 
@@ -143,7 +331,6 @@ def render_editor_documento(r, search_terms=[], es_inventario=False):
         p_ini = min(p_encontradas) if p_encontradas else 1
         
         if not es_inventario and search_terms:
-            # En Buscador: Mostrar ambos
             c1, c2 = st.columns(2)
             with c1:
                 pdf_resaltado = resaltar_pdf_multiple(blob, search_terms)
@@ -151,7 +338,6 @@ def render_editor_documento(r, search_terms=[], es_inventario=False):
             with c2:
                 st.components.v1.html(abrir_pdf_js(blob, p_ini, f"orig_{doc_id}", "Ver PDF Original", "#6c757d"), height=65)
         else:
-            # En Inventario: Solo Original
             st.components.v1.html(abrir_pdf_js(blob, p_ini, f"orig_{doc_id}", "Ver PDF Original", "#007bff"), height=65)
 
     with t2:
@@ -193,14 +379,94 @@ def render_editor_documento(r, search_terms=[], es_inventario=False):
 
 if 'pendientes' not in st.session_state: st.session_state.pendientes = []
 if 'uploader_id' not in st.session_state: st.session_state.uploader_id = 0
+if 'search_results' not in st.session_state: st.session_state.search_results = None
+if 'last_query' not in st.session_state: st.session_state.last_query = ""
+if 'search_page' not in st.session_state: st.session_state.search_page = 0
+
+RESULTADOS_POR_PAGINA = 10
 
 with st.sidebar:
-    st.title("🛡️ Cronosol")
-    choice = st.radio("Menú Principal", ["🔍 Buscador", "📂 Documentos", "📤 Carga Masiva"])
+    render_sidebar_brand()
+    st.divider()
+    choice = st.radio("Menú Principal", ["🔍 Buscador", "📂 Documentos", "📤 Carga Masiva", "⚙️ Personalización"])
     st.divider()
     st.info("Sistema de Trazabilidad Aduanera.")
 
-if choice == "📤 Carga Masiva":
+# =============================================
+# MÓDULO: PERSONALIZACIÓN
+# =============================================
+if choice == "⚙️ Personalización":
+    st.header("⚙️ Personalización de la Aplicación")
+    st.write("Configura el nombre y logo de tu empresa. Estos datos se muestran en el sidebar y en el módulo de búsqueda.")
+    st.divider()
+
+    nombre_actual = obtener_config("nombre_empresa") or ""
+    logo_actual = obtener_config("logo_empresa")
+
+    col_p1, col_p2 = st.columns([2, 1])
+
+    with col_p1:
+        st.subheader("🏢 Datos de la Empresa")
+        nuevo_nombre = st.text_input("Nombre de la empresa", value=nombre_actual, placeholder="Ej: Cronosol S.A.S.")
+        
+        st.subheader("🖼️ Logo de la Empresa")
+        st.caption("Formatos aceptados: PNG, JPG, JPEG. Recomendado: imagen cuadrada, mínimo 128×128 px.")
+        logo_file = st.file_uploader("Subir logo", type=["png", "jpg", "jpeg"], label_visibility="collapsed")
+
+        st.divider()
+        if st.button("💾 Guardar Configuración", use_container_width=True):
+            cambios = False
+            if nuevo_nombre.strip():
+                guardar_config("nombre_empresa", nuevo_nombre.strip())
+                cambios = True
+            if logo_file:
+                guardar_config("logo_empresa", logo_file.read())
+                cambios = True
+            if cambios:
+                st.success("✅ Configuración guardada correctamente. Los cambios son visibles de inmediato.")
+                st.rerun()
+            else:
+                st.warning("No se realizaron cambios. Ingresa un nombre o sube un logo.")
+
+        # Opción para limpiar logo
+        if logo_actual:
+            if st.button("🗑️ Eliminar logo actual", use_container_width=True):
+                c.execute("DELETE FROM config_empresa WHERE clave='logo_empresa'")
+                conn.commit()
+                st.rerun()
+
+    with col_p2:
+        st.subheader("👁️ Vista Previa")
+        preview_nombre = nuevo_nombre.strip() if nuevo_nombre.strip() else (nombre_actual or "Mi Empresa")
+        
+        if logo_file:
+            logo_file.seek(0)
+            logo_preview = logo_file.read()
+            logo_b64 = base64.b64encode(logo_preview).decode('utf-8')
+            preview_logo_html = f'<img src="data:image/png;base64,{logo_b64}" style="height:56px;width:56px;object-fit:contain;border-radius:8px;border:1px solid #e9ecef;background:white;padding:4px;" alt="Logo"/>'
+        elif logo_actual:
+            logo_b64 = base64.b64encode(logo_actual).decode('utf-8')
+            preview_logo_html = f'<img src="data:image/png;base64,{logo_b64}" style="height:56px;width:56px;object-fit:contain;border-radius:8px;border:1px solid #e9ecef;background:white;padding:4px;" alt="Logo"/>'
+        else:
+            preview_logo_html = '<div style="font-size:2.5em;">🏢</div>'
+
+        st.markdown(f"""
+        <div style="background:linear-gradient(90deg,#f8f9fa 0%,#ffffff 100%);border:1px solid #e0e0e0;border-radius:12px;padding:16px 20px;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+            <div style="display:flex;align-items:center;gap:14px;">
+                {preview_logo_html}
+                <div>
+                    <div style="font-weight:700;font-size:1.1em;color:#1a1a2e;">{preview_nombre}</div>
+                    <div style="font-size:0.8em;color:#6c757d;">Sistema de Trazabilidad Aduanera</div>
+                </div>
+            </div>
+        </div>
+        <p style="font-size:0.75em;color:#aaa;margin-top:8px;text-align:center;">Vista previa del header en Buscador</p>
+        """, unsafe_allow_html=True)
+
+# =============================================
+# MÓDULO: CARGA MASIVA
+# =============================================
+elif choice == "📤 Carga Masiva":
     st.header("Carga Masiva de Documentos")
     tipo_up = st.radio("Tipo de Documento:", ["Factura de Compra", "Manifiesto de Aduana"], horizontal=True)
     archivos = st.file_uploader("Subir archivos PDF", type="pdf", accept_multiple_files=True, key=f"up_{st.session_state.uploader_id}")
@@ -214,10 +480,7 @@ if choice == "📤 Carga Masiva":
                 full_text = ""
                 for page in pdf:
                     full_text += page.get_text()
-                
-                # Validación de OCR
-                tiene_ocr = len(full_text.strip()) > 5 # Umbral mínimo de texto
-                
+                tiene_ocr = len(full_text.strip()) > 5
                 st.session_state.pendientes.append({
                     "id": doc_id, 
                     "nombre": f.name, 
@@ -255,7 +518,6 @@ if choice == "📤 Carga Masiva":
                         st.markdown("<small style='color:red;'>Este documento no tiene texto extraíble. Por favor, súbelo de nuevo con OCR o elimínalo.</small>", unsafe_allow_html=True)
                     else:
                         st.caption(f"Tipo asignado: {d['tipo']}")
-                
                 if d['ocr']:
                     docs_finales.append({**d, "fecha": new_f.strftime("%Y-%m-%d")})
                 st.markdown('</div>', unsafe_allow_html=True)
@@ -285,6 +547,9 @@ if choice == "📤 Carga Masiva":
                 st.session_state.uploader_id += 1
                 st.rerun()
 
+# =============================================
+# MÓDULO: INVENTARIO
+# =============================================
 elif choice == "📂 Documentos":
     st.header("Inventario de Documentos")
     col_v1, col_v2 = st.columns(2)
@@ -300,7 +565,6 @@ elif choice == "📂 Documentos":
     docs = c.fetchall()
 
     if docs:
-        # Botones de descarga masiva en Inventario
         st.markdown('<div class="zip-download-container">', unsafe_allow_html=True)
         label_zip = f"Descargar {f_tipo}" if f_tipo != "Todos" else "Descargar Todo el Inventario"
         zip_data = generar_zip_blob(docs)
@@ -315,35 +579,64 @@ elif choice == "📂 Documentos":
     else:
         st.info("No hay documentos registrados aún en esta categoría.")
 
+# =============================================
+# MÓDULO: BUSCADOR (con caché + paginación)
+# =============================================
 elif choice == "🔍 Buscador":
+    render_company_header()
     st.header("Buscador Inteligente Multitermino")
     query_in = st.text_input("Ingrese Referencias (sepárelas por coma)").upper()
-    
+
     if query_in:
         queries = [q.strip() for q in query_in.split(",") if q.strip()]
-        sql_cond = " OR ".join(["contenido LIKE ?" for _ in queries])
-        params = [f"%{q}%" for q in queries]
-        
-        c.execute(f"SELECT id, tipo, numero, fecha_iso, nombre_archivo, paginas_json, pdf_blob, contenido FROM documentos WHERE {sql_cond} ORDER BY fecha_iso DESC", params)
-        res = c.fetchall()
-        
+
+        # Caché: solo ejecutar query si cambió el término de búsqueda
+        if query_in != st.session_state.last_query:
+            st.session_state.search_results = ejecutar_busqueda(queries)
+            st.session_state.last_query = query_in
+            st.session_state.search_page = 0  # Reset a primera página al nueva búsqueda
+
+        res = st.session_state.search_results
+
         if res:
-            st.markdown(f'<div class="zip-download-container">', unsafe_allow_html=True)
-            st.write(f"📂 **Acciones Masivas para {len(res)} resultados:**")
+            total_resultados = len(res)
+            total_paginas = (total_resultados + RESULTADOS_POR_PAGINA - 1) // RESULTADOS_POR_PAGINA
+            pagina_actual = st.session_state.search_page
+            inicio = pagina_actual * RESULTADOS_POR_PAGINA
+            fin = inicio + RESULTADOS_POR_PAGINA
+            res_pagina = res[inicio:fin]
+
+            # Acciones masivas (sobre TODOS los resultados)
+            st.markdown('<div class="zip-download-container">', unsafe_allow_html=True)
+            st.write(f"📂 **{total_resultados} resultado(s) encontrado(s)** — Mostrando {inicio+1}–{min(fin, total_resultados)}")
             cb1, cb2 = st.columns(2)
-            
-            # Aquí sí se permite resaltado
             zip_res = generar_zip_blob([r[:7] for r in res], True, queries)
             cb1.download_button("📥 Descargar Resultados Subrayados (.zip)", zip_res, "busqueda_resaltada.zip")
-            
             zip_orig = generar_zip_blob([r[:7] for r in res], False)
             cb2.download_button("📥 Descargar Resultados Originales (.zip)", zip_orig, "busqueda_original.zip")
             st.markdown('</div>', unsafe_allow_html=True)
-            
-            for r in res:
+
+            # Resultados de la página actual
+            for r in res_pagina:
                 coinciden = [q for q in queries if q in r[7]]
                 fecha_v = datetime.strptime(r[3], "%Y-%m-%d").strftime("%d/%m/%Y")
                 with st.expander(f"🔍 {fecha_v} | {r[4]} (Coincide con: {', '.join(coinciden)})"):
                     render_editor_documento(r[:7], queries, es_inventario=False)
+
+            # Controles de paginación
+            if total_paginas > 1:
+                st.divider()
+                st.markdown(f'<div class="pagination-info">Página {pagina_actual + 1} de {total_paginas}</div>', unsafe_allow_html=True)
+                nav1, nav2, nav3 = st.columns([1, 2, 1])
+                with nav1:
+                    if pagina_actual > 0:
+                        if st.button("← Anterior", use_container_width=True):
+                            st.session_state.search_page -= 1
+                            st.rerun()
+                with nav3:
+                    if pagina_actual < total_paginas - 1:
+                        if st.button("Siguiente →", use_container_width=True):
+                            st.session_state.search_page += 1
+                            st.rerun()
         else:
             st.warning("No se encontraron coincidencias para los términos ingresados.")
