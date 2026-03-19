@@ -149,7 +149,7 @@ st.markdown("""
 
 
     /* Botones Carga Masiva - selector por clase st-key generada por Streamlit */
-    .st-key-btn_analizar button  { background-color: #17a2b8 !important; color: white !important; border: none !important; }
+    .st-key-btn_analizar button  { background-color: #007bff !important; color: white !important; border: none !important; }
     .st-key-cancel_ocr button,
     .st-key-cancel_ok button     { background-color: #dc3545 !important; color: white !important; border: none !important; }
     .st-key-btn_confirmar button { background-color: #28a745 !important; color: white !important; border: none !important; }
