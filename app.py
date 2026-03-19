@@ -783,4 +783,4 @@ elif choice == "🔍 Buscador":
                 else:
                     st.info(f"No hay resultados{label_filtro} para esta búsqueda.")
         else:
-            st.warning("No se encontraron coincidencias para los términos ingresados.")
+            st.error("No se encontraron coincidencias para los términos ingresados.")
