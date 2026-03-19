@@ -300,7 +300,7 @@ elif choice == "📤 Carga Masiva":
                 
                 if d['ocr']:
                     docs_finales.append({**d, "fecha": new_f.strftime("%Y-%m-%d")})
-                st.markdown('</div>', unsafe_allow_html=True)
+                
 
         if hay_errores_ocr:
             st.warning("Debe corregir o eliminar los archivos sin OCR para poder continuar.")
