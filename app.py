@@ -152,6 +152,12 @@ st.markdown("""
     .btn-verde button   { background-color: #28a745 !important; color: white !important; border: none !important; }
     .btn-naranja button { background-color: #fd7e14 !important; color: white !important; border: none !important; }
 
+    /* Botones Carga Masiva por key */
+    button[key="btn_analizar"] { background-color: #17a2b8 !important; color: white !important; border: none !important; }
+    button[key="cancel_ocr"], button[key="cancel_ok"] { background-color: #dc3545 !important; color: white !important; border: none !important; }
+    button[key="btn_confirmar"] { background-color: #28a745 !important; color: white !important; border: none !important; }
+    button[key="btn_quitar_error"] { background-color: #fd7e14 !important; color: white !important; border: none !important; }
+
     </style>
     """, unsafe_allow_html=True)
 
