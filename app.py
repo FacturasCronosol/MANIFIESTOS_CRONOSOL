@@ -507,25 +507,24 @@ elif choice == "📤 Carga Masiva":
         docs_finales = []
         for i, d in enumerate(st.session_state.pendientes):
             card_style = "upload-card" if d['ocr'] else "upload-card-error"
-            with st.container():
-                st.markdown(f'<div class="{card_style}">', unsafe_allow_html=True)
-                c_up1, c_up2 = st.columns([1, 2])
-                with c_up1:
-                    if d['ocr']:
-                        try: f_val = datetime.strptime(d['fecha'], "%Y-%m-%d").date()
-                        except: f_val = datetime.now().date()
-                        new_f = st.date_input(f"Fecha", value=f_val, key=f"f_up_{i}")
-                    else:
-                        st.error("⚠️ ERROR: Sin OCR")
-                with c_up2:
-                    st.write(f"📄 **{d['nombre']}**")
-                    if not d['ocr']:
-                        st.markdown("<small style='color:red;'>Este documento no tiene texto extraíble. Por favor, súbelo de nuevo con OCR o elimínalo.</small>", unsafe_allow_html=True)
-                    else:
-                        st.caption(f"Tipo asignado: {d['tipo']}")
+            st.markdown(f'<div class="{card_style}">', unsafe_allow_html=True)
+            c_up1, c_up2 = st.columns([1, 2])
+            with c_up1:
                 if d['ocr']:
-                    docs_finales.append({**d, "fecha": new_f.strftime("%Y-%m-%d")})
-                st.markdown('</div>', unsafe_allow_html=True)
+                    try: f_val = datetime.strptime(d['fecha'], "%Y-%m-%d").date()
+                    except: f_val = datetime.now().date()
+                    new_f = st.date_input(f"Fecha", value=f_val, key=f"f_up_{i}")
+                else:
+                    st.error("⚠️ ERROR: Sin OCR")
+            with c_up2:
+                st.write(f"📄 **{d['nombre']}**")
+                if not d['ocr']:
+                    st.markdown("<small style='color:red;'>Este documento no tiene texto extraíble. Por favor, súbelo de nuevo con OCR o elimínalo.</small>", unsafe_allow_html=True)
+                else:
+                    st.caption(f"Tipo asignado: {d['tipo']}")
+            if d['ocr']:
+                docs_finales.append({**d, "fecha": new_f.strftime("%Y-%m-%d")})
+            st.markdown('</div>', unsafe_allow_html=True)
 
         if hay_errores_ocr:
             st.warning("Debe corregir o eliminar los archivos sin OCR para poder continuar.")
