@@ -21,87 +21,74 @@ st.set_page_config(
 # --- ESTILOS PERSONALIZADOS ---
 st.markdown("""
     <style>
-    /* BOTÓN GUARDAR - AZUL */
-    div.stButton > button[key*="save_"] {
+    /* 1. BOTÓN GUARDAR - AZUL (Quitamos el '>' para que sea más flexible) */
+    div.stButton button[key*="save_"] {
         background-color: #007bff !important;
+        color: white !important;
         border: 1px solid #0056b3 !important;
+        border-radius: 8px !important;
+        height: 3.5em !important;
+        width: 100% !important;
     }
     
-    div.stButton > button[key*="save_"] p {
+    /* Forzar el texto blanco dentro del botón de guardar */
+    div.stButton button[key*="save_"] p {
         color: white !important;
         font-weight: bold !important;
     }
 
-    /* BOTÓN ELIMINAR - ROJO */
-    div.stButton > button[key*="del_"] {
+    /* 2. BOTÓN ELIMINAR - ROJO */
+    div.stButton button[key*="del_"] {
         background-color: #dc3545 !important;
+        color: white !important;
         border: 1px solid #a71d2a !important;
+        border-radius: 8px !important;
+        height: 3.5em !important;
+        width: 100% !important;
     }
 
-    div.stButton > button[key*="del_"] p {
+    /* Forzar el texto blanco dentro del botón de eliminar */
+    div.stButton button[key*="del_"] p {
         color: white !important;
         font-weight: bold !important;
     }
 
-    /* EFECTO HOVER (Opcional pero recomendado) */
-    div.stButton > button[key*="save_"]:hover { background-color: #0056b3 !important; }
-    div.stButton > button[key*="del_"]:hover { background-color: #a71d2a !important; }
+    /* 3. EFECTOS HOVER */
+    div.stButton button[key*="save_"]:hover { background-color: #0056b3 !important; border-color: #004085 !important; }
+    div.stButton button[key*="del_"]:hover { background-color: #a71d2a !important; border-color: #721c24 !important; }
     
-    /* Botón Descargar (Verde - Para que no se pierda) */
-    .stDownloadButton>button { 
+    /* 4. BOTÓN DESCARGAR (VERDE) */
+    .stDownloadButton button { 
         background-color: #28b873 !important; 
         color: white !important; 
+        width: 100% !important;
+        border-radius: 8px !important;
     }
-    
-    /* Estilo para cuando SÍ hay resultados (Azul Celeste) */
+    .stDownloadButton button p { color: white !important; }
+
+    /* 5. ALERTAS Y CONTENEDORES */
     .page-info { 
-        background-color: #e3f2fd; /* Azul muy claro */
-        padding: 10px; 
-        border-radius: 5px; 
-        border-left: 5px solid #03a9f4; /* Borde azul vibrante */
-        font-weight: bold; 
-        margin-bottom: 10px; 
-        color: #01579b; /* Texto azul oscuro para contraste */
+        background-color: #e3f2fd; padding: 10px; border-radius: 5px; 
+        border-left: 5px solid #03a9f4; font-weight: bold; margin-bottom: 10px; color: #01579b; 
     }
 
-    /* Estilo para cuando NO hay resultados (Rojo) */
     .error-alert { 
-        background-color: #fabbc1; 
-        padding: 10px; 
-        border-radius: 5px; 
-        border-left: 5px solid #73000b; 
-        font-weight: bold; 
-        margin-bottom: 10px; 
-        color: #73000b; 
+        background-color: #721c24; padding: 10px; border-radius: 5px; 
+        border-left: 5px solid #dc3545; font-weight: bold; margin-bottom: 10px; color: #ffffff; 
     }
     
-    /* ELIMINAR BARRAS BLANCAS: Cambiamos blanco por transparente */
     .upload-card { 
-        border: 1px solid #444; 
-        padding: 15px; 
-        border-radius: 10px; 
-        margin-bottom: 15px; 
-        background-color: transparent; 
-        box-shadow: none; 
+        border: 1px solid #444; padding: 15px; border-radius: 10px; 
+        margin-bottom: 15px; background-color: transparent; 
     }
     
     .zip-download-container {
-        background-color: transparent; /* Antes era #f8f9fa (blanco) */
-        padding: 20px;
-        border-radius: 12px;
-        border: 1px solid #444;
-        margin-bottom: 25px;
+        background-color: transparent; padding: 20px; border-radius: 12px;
+        border: 1px solid #444; margin-bottom: 25px;
     }
-    .sidebar-logo {
-        display: flex;
-        justify-content: center;
-        margin-bottom: 20px;
-    }
-    .sidebar-logo img {
-        max-width: 150px;
-        max-height: 150px;
-        border-radius: 10px;
-    }
+
+    .sidebar-logo { display: flex; justify-content: center; margin-bottom: 20px; }
+    .sidebar-logo img { max-width: 150px; max-height: 150px; border-radius: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
