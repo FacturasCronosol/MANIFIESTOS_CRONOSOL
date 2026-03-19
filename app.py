@@ -155,6 +155,10 @@ st.markdown("""
     .st-key-btn_confirmar button { background-color: #28a745 !important; color: white !important; border: none !important; }
     .st-key-btn_quitar_error button { background-color: #fd7e14 !important; color: white !important; border: none !important; }
 
+    /* Botones Personalización */
+    .st-key-btn_guardar_config button  { background-color: #28a745 !important; color: white !important; border: none !important; }
+    .st-key-btn_eliminar_logo button   { background-color: #dc3545 !important; color: white !important; border: none !important; }
+
     </style>
     """, unsafe_allow_html=True)
 
@@ -433,7 +437,7 @@ if choice == "⚙️ Personalización":
         logo_file = st.file_uploader("Subir logo", type=["png", "jpg", "jpeg"], label_visibility="collapsed")
 
         st.divider()
-        if st.button("💾 Guardar Configuración", use_container_width=True):
+        if st.button("💾 Guardar Configuración", key="btn_guardar_config", use_container_width=True):
             cambios = False
             if nuevo_nombre.strip():
                 guardar_config("nombre_empresa", nuevo_nombre.strip())
@@ -449,7 +453,7 @@ if choice == "⚙️ Personalización":
 
         # Opción para limpiar logo
         if logo_actual:
-            if st.button("🗑️ Eliminar logo actual", use_container_width=True):
+            if st.button("🗑️ Eliminar logo actual", key="btn_eliminar_logo", use_container_width=True):
                 c.execute("DELETE FROM config_empresa WHERE clave='logo_empresa'")
                 conn.commit()
                 st.rerun()
