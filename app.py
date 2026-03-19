@@ -23,18 +23,22 @@ st.markdown("""
     <style>
     .stButton>button { width: 100%; border-radius: 8px; height: 3.5em; font-weight: bold; }
     
-    /* Botón Guardar (Verde) */
+    /* Botón Guardar (Ahora Azul Celeste Profesional) */
     div[data-testid="stVerticalBlock"] div[data-testid="stHorizontalBlock"] .stButton button[key*="save_"] {
-        background-color: #28b873 !important; color: white !important; border: none;
+        background-color: #007bff !important; 
+        color: white !important; 
+        border: none;
     }
 
-    /* Botón Eliminar (Rojo) */
+    /* Botón Eliminar (Rojo - Mantener o Intensificar) */
     div[data-testid="stVerticalBlock"] div[data-testid="stHorizontalBlock"] .stButton button[key*="del_"] {
-        background-color: #e63e4b !important; color: white !important; border: none;
+        background-color: #e63e4b !important; 
+        color: white !important; 
+        border: none;
     }
     
     .stDownloadButton>button { background-color: #28b873 !important; color: white !important; }
-
+    
     /* Estilo para cuando SÍ hay resultados (Azul Celeste) */
     .page-info { 
         background-color: #e3f2fd; /* Azul muy claro */
@@ -57,14 +61,21 @@ st.markdown("""
         color: #73000b; 
     }
     
-    .upload-card { border: 1px solid #ddd; padding: 15px; border-radius: 10px; margin-bottom: 15px; background-color: #ffffff; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-    .upload-card-error { border: 2px solid #dc3545; padding: 15px; border-radius: 10px; margin-bottom: 15px; background-color: #fff5f5; }
+    /* ELIMINAR BARRAS BLANCAS: Cambiamos blanco por transparente */
+    .upload-card { 
+        border: 1px solid #444; 
+        padding: 15px; 
+        border-radius: 10px; 
+        margin-bottom: 15px; 
+        background-color: transparent; 
+        box-shadow: none; 
+    }
     
     .zip-download-container {
-        background-color: #f8f9fa;
+        background-color: transparent; /* Antes era #f8f9fa (blanco) */
         padding: 20px;
         border-radius: 12px;
-        border: 1px solid #e9ecef;
+        border: 1px solid #444;
         margin-bottom: 25px;
     }
     .sidebar-logo {
