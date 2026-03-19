@@ -148,6 +148,29 @@ st.markdown("""
 
 
 
+    /* Botones Carga Masiva - selector por data-testid y texto */
+    button[data-testid="stBaseButton-secondary"]:has(p):has(p:not(:empty)) { border-radius: 8px !important; }
+
+    button[data-testid="stBaseButton-secondary"]:has(div p) {
+        border: none !important;
+    }
+    /* Analizar → celeste */
+    button[data-testid="stBaseButton-secondary"]:has(div p:contains("Analizar")) {
+        background-color: #17a2b8 !important; color: white !important; border: none !important;
+    }
+    /* Cancelar → rojo */
+    button[data-testid="stBaseButton-secondary"]:has(div p:contains("Cancelar")) {
+        background-color: #dc3545 !important; color: white !important; border: none !important;
+    }
+    /* Confirmar → verde */
+    button[data-testid="stBaseButton-secondary"]:has(div p:contains("Confirmar")) {
+        background-color: #28a745 !important; color: white !important; border: none !important;
+    }
+    /* Quitar archivos → naranja */
+    button[data-testid="stBaseButton-secondary"]:has(div p:contains("Quitar")) {
+        background-color: #fd7e14 !important; color: white !important; border: none !important;
+    }
+
     </style>
     """, unsafe_allow_html=True)
 
@@ -483,7 +506,6 @@ elif choice == "📤 Carga Masiva":
     tipo_up = st.radio("Tipo de Documento:", ["Factura de Compra", "Manifiesto de Aduana"], horizontal=True)
     archivos = st.file_uploader("Subir archivos PDF", type="pdf", accept_multiple_files=True, key=f"up_{st.session_state.uploader_id}")
 
-    st.markdown('<style>#analizar_wrap + div .stButton > button{background:#17a2b8!important;color:white!important;border:none!important} #analizar_wrap + div .stButton > button:hover{background:#138a9e!important}</style><span id="analizar_wrap"></span>', unsafe_allow_html=True)
     analizar_clicked = st.button("⚡ Analizar Documentos", key="btn_analizar")
     if analizar_clicked:
         st.session_state.pendientes = []
@@ -532,14 +554,12 @@ elif choice == "📤 Carga Masiva":
             st.warning("Debe corregir o eliminar los archivos sin OCR para poder continuar.")
             btn_col1, btn_col2 = st.columns(2)
             with btn_col1:
-                st.markdown('<style>#cancel_ocr_wrap + div .stButton > button{background:#dc3545!important;color:white!important;border:none!important}</style><span id="cancel_ocr_wrap"></span>', unsafe_allow_html=True)
                 cancel_ocr_clicked = st.button("❌ Cancelar Carga", key="cancel_ocr")
                 if cancel_ocr_clicked:
                     st.session_state.pendientes = []
                     st.session_state.uploader_id += 1
                     st.rerun()
             with btn_col2:
-                st.markdown('<style>#quitar_wrap + div .stButton > button{background:#fd7e14!important;color:white!important;border:none!important}</style><span id="quitar_wrap"></span>', unsafe_allow_html=True)
                 quitar_clicked = st.button("🗑️ Quitar archivos con error", key="btn_quitar_error")
                 if quitar_clicked:
                     st.session_state.pendientes = [d for d in st.session_state.pendientes if d['ocr']]
@@ -547,14 +567,12 @@ elif choice == "📤 Carga Masiva":
         else:
             btn_col1, btn_col2 = st.columns(2)
             with btn_col1:
-                st.markdown('<style>#cancel_ok_wrap + div .stButton > button{background:#dc3545!important;color:white!important;border:none!important}</style><span id="cancel_ok_wrap"></span>', unsafe_allow_html=True)
                 cancel_ok_clicked = st.button("❌ Cancelar Carga", key="cancel_ok")
                 if cancel_ok_clicked:
                     st.session_state.pendientes = []
                     st.session_state.uploader_id += 1
                     st.rerun()
             with btn_col2:
-                st.markdown('<style>#confirmar_wrap + div .stButton > button{background:#28a745!important;color:white!important;border:none!important}</style><span id="confirmar_wrap"></span>', unsafe_allow_html=True)
                 confirmar_clicked = st.button("🚀 Confirmar y Guardar todo", key="btn_confirmar")
                 if confirmar_clicked:
                     for doc in docs_finales:
