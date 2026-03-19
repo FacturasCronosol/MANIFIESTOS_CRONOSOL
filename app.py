@@ -343,12 +343,10 @@ elif choice == "📂 Documentos":
     docs = c.fetchall()
 
     if docs:
-        st.markdown('<div class="zip-download-container">', unsafe_allow_html=True)
         label_zip = f"Descargar {f_tipo}" if f_tipo != "Todos" else "Descargar Todo el Inventario"
         zip_data = generar_zip_blob(docs)
         st.write(f"📦 **Acciones para {len(docs)} documentos encontrados:**")
         st.download_button(f"📥 {label_zip} (.zip)", zip_data, f"{f_tipo.lower().replace(' ','_')}.zip")
-        st.markdown('</div>', unsafe_allow_html=True)
 
         for r in docs:
             fecha_v = datetime.strptime(r[3], "%Y-%m-%d").strftime("%d/%m/%Y")
