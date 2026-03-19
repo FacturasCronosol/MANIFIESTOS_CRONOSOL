@@ -13,66 +13,40 @@ from datetime import datetime
 
 # Configuración profesional de la página
 st.set_page_config(
-    page_title="GESTIÓN DOCUMENTAL - CRONOSOL", 
+    page_title="Gestión Cronosol - DIAN", 
     layout="wide", 
-    page_icon="🟡"
+    page_icon="🛡️"
 )
 
 # --- ESTILOS PERSONALIZADOS ---
 st.markdown("""
     <style>
-    /* El primer botón de la zona crítica siempre será rojo */
-    .zona-critica [data-testid="stHorizontalBlock"] div:nth-child(1) button {
-        background-color: #dc3545 !important;
-        color: white !important;
-    }
-    /* El segundo botón de la zona crítica siempre será azul */
-    .zona-critica [data-testid="stHorizontalBlock"] div:nth-child(2) button {
-        background-color: #007bff !important;
-        color: white !important;
-    }
-    /* El texto de ambos siempre será blanco y negrita */
-    .zona-critica button p {
-        color: white !important;
-        font-weight: bold !important;
-    }
-
-    /* Efectos al pasar el mouse */
-    [data-testid="stHorizontalBlock"] div:nth-child(1) button:hover { background-color: #a71d2a !important; }
-    [data-testid="stHorizontalBlock"] div:nth-child(2) button:hover { background-color: #0056b3 !important; }
+    .stButton>button { width: 100%; border-radius: 8px; height: 3.5em; font-weight: bold; }
     
-    /* 4. BOTÓN DESCARGAR (VERDE) */
-    .stDownloadButton button { 
-        background-color: #28b873 !important; 
-        color: white !important; 
-        width: 100% !important;
-        border-radius: 8px !important;
-    }
-    .stDownloadButton button p { color: white !important; }
-
-    /* 5. ALERTAS Y CONTENEDORES */
-    .page-info { 
-        background-color: #e3f2fd; padding: 10px; border-radius: 5px; 
-        border-left: 5px solid #03a9f4; font-weight: bold; margin-bottom: 10px; color: #01579b; 
+    /* Botón Guardar (Verde) */
+    div[data-testid="stVerticalBlock"] div[data-testid="stHorizontalBlock"] .stButton button[key*="save_"] {
+        background-color: #28a745 !important; color: white !important; border: none;
     }
 
-    .error-alert { 
-        background-color: #721c24; padding: 10px; border-radius: 5px; 
-        border-left: 5px solid #dc3545; font-weight: bold; margin-bottom: 10px; color: #ffffff; 
+    /* Botón Eliminar (Rojo) */
+    div[data-testid="stVerticalBlock"] div[data-testid="stHorizontalBlock"] .stButton button[key*="del_"] {
+        background-color: #dc3545 !important; color: white !important; border: none;
     }
     
-    .upload-card { 
-        border: 1px solid #444; padding: 15px; border-radius: 10px; 
-        margin-bottom: 15px; background-color: transparent; 
-    }
+    .stDownloadButton>button { background-color: #007bff !important; color: white !important; }
+
+    .highlight-page { background-color: #fff3cd; padding: 10px; border-radius: 5px; border-left: 5px solid #ffc107; font-weight: bold; margin-bottom: 10px; color: #856404; }
+    
+    .upload-card { border: 1px solid #ddd; padding: 15px; border-radius: 10px; margin-bottom: 15px; background-color: #ffffff; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    .upload-card-error { border: 2px solid #dc3545; padding: 15px; border-radius: 10px; margin-bottom: 15px; background-color: #fff5f5; }
     
     .zip-download-container {
-        background-color: transparent; padding: 20px; border-radius: 12px;
-        border: 1px solid #444; margin-bottom: 25px;
+        background-color: #f8f9fa;
+        padding: 20px;
+        border-radius: 12px;
+        border: 1px solid #e9ecef;
+        margin-bottom: 25px;
     }
-
-    .sidebar-logo { display: flex; justify-content: center; margin-bottom: 20px; }
-    .sidebar-logo img { max-width: 150px; max-height: 150px; border-radius: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -80,27 +54,13 @@ st.markdown("""
 def init_db():
     conn = sqlite3.connect('gestion_cronosol_v4.db', check_same_thread=False)
     c = conn.cursor()
-    # Tabla de documentos (Existente)
     c.execute('''CREATE TABLE IF NOT EXISTS documentos 
                  (id TEXT PRIMARY KEY, tipo TEXT, numero TEXT, fecha_iso TEXT, 
-                 proveedor TEXT, contenido TEXT, nombre_archivo TEXT, pdf_blob BLOB, paginas_json TEXT)''')
-    # Tabla de configuración (Nueva)
-    c.execute('''CREATE TABLE IF NOT EXISTS configuracion
-                 (id INTEGER PRIMARY KEY, nombre_empresa TEXT, logo_b64 TEXT)''')
+                  proveedor TEXT, contenido TEXT, nombre_archivo TEXT, pdf_blob BLOB, paginas_json TEXT)''')
     conn.commit()
     return conn, c
 
 conn, c = init_db()
-
-# --- FUNCIONES DE CONFIGURACIÓN ---
-def obtener_configuracion():
-    c.execute("SELECT nombre_empresa, logo_b64 FROM configuracion WHERE id=1")
-    res = c.fetchone()
-    if res:
-        return {"nombre": res[0], "logo": res[1]}
-    return {"nombre": "Cronosol", "logo": None}
-
-config = obtener_configuracion()
 
 # --- FUNCIONES DE PROCESAMIENTO ---
 
@@ -155,6 +115,7 @@ def generar_zip_blob(resultados, usar_resaltado=False, queries=[]):
     buf = BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         for r in resultados:
+            # r[4] es nombre_archivo, r[6] es pdf_blob
             nombre = r[4] if r[4].lower().endswith(".pdf") else f"{r[4]}.pdf"
             blob = r[6]
             if usar_resaltado and queries:
@@ -177,11 +138,12 @@ def render_editor_documento(r, search_terms=[], es_inventario=False):
                     p_encontradas.append(int(p))
         
         if p_encontradas:
-            st.markdown(f'<div class="page-info">📍 Coincidencias en página(s): {", ".join(map(str, sorted(p_encontradas)))}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="highlight-page">📍 Coincidencias en página(s): {", ".join(map(str, sorted(p_encontradas)))}</div>', unsafe_allow_html=True)
         
         p_ini = min(p_encontradas) if p_encontradas else 1
         
         if not es_inventario and search_terms:
+            # En Buscador: Mostrar ambos
             c1, c2 = st.columns(2)
             with c1:
                 pdf_resaltado = resaltar_pdf_multiple(blob, search_terms)
@@ -189,6 +151,7 @@ def render_editor_documento(r, search_terms=[], es_inventario=False):
             with c2:
                 st.components.v1.html(abrir_pdf_js(blob, p_ini, f"orig_{doc_id}", "Ver PDF Original", "#6c757d"), height=65)
         else:
+            # En Inventario: Solo Original
             st.components.v1.html(abrir_pdf_js(blob, p_ini, f"orig_{doc_id}", "Ver PDF Original", "#007bff"), height=65)
 
     with t2:
@@ -196,48 +159,30 @@ def render_editor_documento(r, search_terms=[], es_inventario=False):
         col_ed1, col_ed2 = st.columns(2)
         edit_tipo = col_ed1.selectbox("Tipo de Documento", ["Factura de Compra", "Manifiesto de Aduana"], index=0 if "Factura" in tipo else 1, key=f"edit_t_{doc_id}")
         
-        try:
-            f_dt = datetime.strptime(fecha_iso, "%Y-%m-%d").date()
-        except:
-            f_dt = datetime.now().date()
-        
+        try: f_dt = datetime.strptime(fecha_iso, "%Y-%m-%d").date()
+        except: f_dt = datetime.now().date()
         edit_fecha = col_ed2.date_input("Fecha", value=f_dt, key=f"edit_f_{doc_id}")
         
         st.divider()
-
-        # --- CONTENEDOR PARA COLORES ---
-        st.markdown('<div class="zona-critica">', unsafe_allow_html=True)
-        
         cb1, cb2 = st.columns(2)
         
-        if not st.session_state.get(f"confirm_del_{doc_id}", False):
-            if cb1.button("🗑️ Eliminar Documento", key=f"del_main_{doc_id}_final"):
+        if f"confirm_del_{doc_id}" not in st.session_state:
+            if cb1.button("🗑️ Eliminar Documento", key=f"del_{doc_id}"):
                 st.session_state[f"confirm_del_{doc_id}"] = True
                 st.rerun()
         else:
             st.error("¿Confirmar eliminación definitiva?")
             cc1, cc2 = st.columns(2)
-            if cc1.button("✅ SI, ELIMINAR", key=f"del_confirm_yes_{doc_id}_final"):
-                eliminar_documento(doc_id)
-                st.session_state[f"confirm_del_{doc_id}"] = False
-                st.success("Eliminado")
+            if cc1.button("✅ Confirmar", key=f"c_ok_{doc_id}"):
+                c.execute("DELETE FROM documentos WHERE id=?", (doc_id,))
+                conn.commit()
+                del st.session_state[f"confirm_del_{doc_id}"]
                 st.rerun()
-            if cc2.button("❌ NO, CONSERVAR", key=f"del_confirm_no_{doc_id}_final"):
-                st.session_state[f"confirm_del_{doc_id}"] = False
+            if cc2.button("❌ Cancelar", key=f"c_no_{doc_id}"):
+                del st.session_state[f"confirm_del_{doc_id}"]
                 st.rerun()
 
-        if cb2.button("💾 Guardar Cambios", key=f"save_{doc_id}_final"):
-            c.execute("UPDATE documentos SET tipo=?, nombre_archivo=?, fecha_iso=? WHERE id=?", 
-                     (edit_tipo, edit_nombre, edit_fecha.strftime("%Y-%m-%d"), doc_id))
-            conn.commit()
-            st.success("¡Documento actualizado!")
-            st.rerun()
-
-        st.markdown('</div>', unsafe_allow_html=True)    
-
-        # 2. Botón Guardar
-        # Cambiamos key a _v4
-        if cb2.button("💾 Guardar Cambios", key=f"save_{doc_id}_v4"):
+        if cb2.button("💾 Guardar Cambios", key=f"save_{doc_id}"):
             c.execute("UPDATE documentos SET tipo=?, nombre_archivo=?, fecha_iso=? WHERE id=?", 
                      (edit_tipo, edit_nombre, edit_fecha.strftime("%Y-%m-%d"), doc_id))
             conn.commit()
@@ -250,35 +195,12 @@ if 'pendientes' not in st.session_state: st.session_state.pendientes = []
 if 'uploader_id' not in st.session_state: st.session_state.uploader_id = 0
 
 with st.sidebar:
-    # Mostrar Logo Dinámico
-    if config["logo"]:
-        st.markdown(f'<div class="sidebar-logo"><img src="data:image/png;base64,{config["logo"]}"></div>', unsafe_allow_html=True)
-    
-    st.title(f"{config['nombre']}")
-    choice = st.radio("Menú Principal", ["🔍 Buscador", "📂 Documentos", "📤 Carga Masiva", "⚙️ Configuración"])
+    st.title("🛡️ Cronosol")
+    choice = st.radio("Menú Principal", ["🔍 Buscador", "📂 Documentos", "📤 Carga Masiva"])
     st.divider()
-    st.info("TRAZABILIDAD DOCUMENTAL - CRONOSOL / FACTURAS DE COMPRAS Y DECLARACIONES DE IMPORTACIÓN")
+    st.info("Sistema de Trazabilidad Aduanera.")
 
-if choice == "⚙️ Configuración":
-    st.header("Información de la Empresa")
-    st.write("Personaliza el nombre y el logo que aparece en el sistema.")
-    
-    with st.form("form_config"):
-        nuevo_nombre = st.text_input("Nombre de la Empresa", value=config["nombre"])
-        nuevo_logo = st.file_uploader("Subir Logo (PNG/JPG)", type=["png", "jpg", "jpeg"])
-        
-        if st.form_submit_button("💾 Guardar Configuración"):
-            logo_b64 = config["logo"]
-            if nuevo_logo:
-                logo_b64 = base64.b64encode(nuevo_logo.read()).decode()
-            
-            c.execute("INSERT OR REPLACE INTO configuracion (id, nombre_empresa, logo_b64) VALUES (1, ?, ?)",
-                     (nuevo_nombre, logo_b64))
-            conn.commit()
-            st.success("Configuración guardada. Recargando...")
-            st.rerun()
-
-elif choice == "📤 Carga Masiva":
+if choice == "📤 Carga Masiva":
     st.header("Carga Masiva de Documentos")
     tipo_up = st.radio("Tipo de Documento:", ["Factura de Compra", "Manifiesto de Aduana"], horizontal=True)
     archivos = st.file_uploader("Subir archivos PDF", type="pdf", accept_multiple_files=True, key=f"up_{st.session_state.uploader_id}")
@@ -293,7 +215,8 @@ elif choice == "📤 Carga Masiva":
                 for page in pdf:
                     full_text += page.get_text()
                 
-                tiene_ocr = len(full_text.strip()) > 5
+                # Validación de OCR
+                tiene_ocr = len(full_text.strip()) > 5 # Umbral mínimo de texto
                 
                 st.session_state.pendientes.append({
                     "id": doc_id, 
@@ -317,6 +240,7 @@ elif choice == "📤 Carga Masiva":
         for i, d in enumerate(st.session_state.pendientes):
             card_style = "upload-card" if d['ocr'] else "upload-card-error"
             with st.container():
+                st.markdown(f'<div class="{card_style}">', unsafe_allow_html=True)
                 c_up1, c_up2 = st.columns([1, 2])
                 with c_up1:
                     if d['ocr']:
@@ -334,7 +258,7 @@ elif choice == "📤 Carga Masiva":
                 
                 if d['ocr']:
                     docs_finales.append({**d, "fecha": new_f.strftime("%Y-%m-%d")})
-                
+                st.markdown('</div>', unsafe_allow_html=True)
 
         if hay_errores_ocr:
             st.warning("Debe corregir o eliminar los archivos sin OCR para poder continuar.")
@@ -376,10 +300,13 @@ elif choice == "📂 Documentos":
     docs = c.fetchall()
 
     if docs:
+        # Botones de descarga masiva en Inventario
+        st.markdown('<div class="zip-download-container">', unsafe_allow_html=True)
         label_zip = f"Descargar {f_tipo}" if f_tipo != "Todos" else "Descargar Todo el Inventario"
         zip_data = generar_zip_blob(docs)
         st.write(f"📦 **Acciones para {len(docs)} documentos encontrados:**")
         st.download_button(f"📥 {label_zip} (.zip)", zip_data, f"{f_tipo.lower().replace(' ','_')}.zip")
+        st.markdown('</div>', unsafe_allow_html=True)
 
         for r in docs:
             fecha_v = datetime.strptime(r[3], "%Y-%m-%d").strftime("%d/%m/%Y")
@@ -389,14 +316,7 @@ elif choice == "📂 Documentos":
         st.info("No hay documentos registrados aún en esta categoría.")
 
 elif choice == "🔍 Buscador":
-    # Logo en el Buscador
-    c_logo1, c_logo2 = st.columns([1, 4])
-    with c_logo1:
-        if config["logo"]:
-            st.image(f"data:image/png;base64,{config['logo']}", width=100)
-    with c_logo2:
-        st.header(f"Buscador Inteligente - {config['nombre']}")
-    
+    st.header("Buscador Inteligente Multitermino")
     query_in = st.text_input("Ingrese Referencias (sepárelas por coma)").upper()
     
     if query_in:
@@ -408,14 +328,17 @@ elif choice == "🔍 Buscador":
         res = c.fetchall()
         
         if res:
+            st.markdown(f'<div class="zip-download-container">', unsafe_allow_html=True)
             st.write(f"📂 **Acciones Masivas para {len(res)} resultados:**")
             cb1, cb2 = st.columns(2)
             
+            # Aquí sí se permite resaltado
             zip_res = generar_zip_blob([r[:7] for r in res], True, queries)
             cb1.download_button("📥 Descargar Resultados Subrayados (.zip)", zip_res, "busqueda_resaltada.zip")
             
             zip_orig = generar_zip_blob([r[:7] for r in res], False)
             cb2.download_button("📥 Descargar Resultados Originales (.zip)", zip_orig, "busqueda_original.zip")
+            st.markdown('</div>', unsafe_allow_html=True)
             
             for r in res:
                 coinciden = [q for q in queries if q in r[7]]
@@ -423,5 +346,4 @@ elif choice == "🔍 Buscador":
                 with st.expander(f"🔍 {fecha_v} | {r[4]} (Coincide con: {', '.join(coinciden)})"):
                     render_editor_documento(r[:7], queries, es_inventario=False)
         else:
-            # Usamos "error-alert" para el fondo rojo
-            st.markdown('<div class="error-alert">❌ No se encontraron coincidencias para los términos ingresados.</div>', unsafe_allow_html=True)
+            st.warning("No se encontraron coincidencias para los términos ingresados.")
