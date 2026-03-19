@@ -21,23 +21,25 @@ st.set_page_config(
 # --- ESTILOS PERSONALIZADOS ---
 st.markdown("""
     <style>
-    <style>
-    /* BOTÓN GUARDAR - AZUL */
-    button[key*="save_"] {
+    /* BOTÓN GUARDAR - AZUL CELESTE PROFESIONAL */
+    div.stButton > button[key^="save_"] {
         background-color: #007bff !important;
         color: white !important;
-        border: none !important;
+        border: 1px solid #0056b3 !important;
+        opacity: 1 !important;
     }
 
     /* BOTÓN ELIMINAR - ROJO */
-    button[key*="del_"] {
+    div.stButton > button[key^="del_"] {
         background-color: #dc3545 !important;
         color: white !important;
-        border: none !important;
+        border: 1px solid #a71d2a !important;
+        opacity: 1 !important;
     }
 
-    /* Ajuste para que el texto sea blanco siempre */
-    button[key*="save_"] p, button[key*="del_"] p {
+    /* FORZAR TEXTO BLANCO */
+    div.stButton > button[key^="save_"] p, 
+    div.stButton > button[key^="del_"] p {
         color: white !important;
     }
     
