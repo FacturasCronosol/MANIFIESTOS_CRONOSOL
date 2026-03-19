@@ -146,6 +146,12 @@ st.markdown("""
         margin: 8px 0 4px 0;
     }
 
+    /* Botones Carga Masiva por clase wrapper */
+    .btn-celeste button { background-color: #17a2b8 !important; color: white !important; border: none !important; }
+    .btn-rojo button    { background-color: #dc3545 !important; color: white !important; border: none !important; }
+    .btn-verde button   { background-color: #28a745 !important; color: white !important; border: none !important; }
+    .btn-naranja button { background-color: #fd7e14 !important; color: white !important; border: none !important; }
+
     </style>
     """, unsafe_allow_html=True)
 
@@ -481,7 +487,10 @@ elif choice == "📤 Carga Masiva":
     tipo_up = st.radio("Tipo de Documento:", ["Factura de Compra", "Manifiesto de Aduana"], horizontal=True)
     archivos = st.file_uploader("Subir archivos PDF", type="pdf", accept_multiple_files=True, key=f"up_{st.session_state.uploader_id}")
 
-    if archivos and st.button("⚡ Analizar Documentos"):
+    st.markdown('<div class="btn-celeste">', unsafe_allow_html=True)
+    analizar_clicked = st.button("⚡ Analizar Documentos", key="btn_analizar")
+    st.markdown('</div>', unsafe_allow_html=True)
+    if analizar_clicked:
         st.session_state.pendientes = []
         for f in archivos:
             b = f.read()
@@ -528,23 +537,35 @@ elif choice == "📤 Carga Masiva":
             st.warning("Debe corregir o eliminar los archivos sin OCR para poder continuar.")
             btn_col1, btn_col2 = st.columns(2)
             with btn_col1:
-                if st.button("❌ Cancelar Carga", key="cancel_ocr"):
+                st.markdown('<div class="btn-rojo">', unsafe_allow_html=True)
+                cancel_ocr_clicked = st.button("❌ Cancelar Carga", key="cancel_ocr")
+                st.markdown('</div>', unsafe_allow_html=True)
+                if cancel_ocr_clicked:
                     st.session_state.pendientes = []
                     st.session_state.uploader_id += 1
                     st.rerun()
             with btn_col2:
-                if st.button("🗑️ Quitar archivos con error"):
+                st.markdown('<div class="btn-naranja">', unsafe_allow_html=True)
+                quitar_clicked = st.button("🗑️ Quitar archivos con error", key="btn_quitar_error")
+                st.markdown('</div>', unsafe_allow_html=True)
+                if quitar_clicked:
                     st.session_state.pendientes = [d for d in st.session_state.pendientes if d['ocr']]
                     st.rerun()
         else:
             btn_col1, btn_col2 = st.columns(2)
             with btn_col1:
-                if st.button("❌ Cancelar Carga", key="cancel_ok"):
+                st.markdown('<div class="btn-rojo">', unsafe_allow_html=True)
+                cancel_ok_clicked = st.button("❌ Cancelar Carga", key="cancel_ok")
+                st.markdown('</div>', unsafe_allow_html=True)
+                if cancel_ok_clicked:
                     st.session_state.pendientes = []
                     st.session_state.uploader_id += 1
                     st.rerun()
             with btn_col2:
-                if st.button("🚀 Confirmar y Guardar todo"):
+                st.markdown('<div class="btn-verde">', unsafe_allow_html=True)
+                confirmar_clicked = st.button("🚀 Confirmar y Guardar todo", key="btn_confirmar")
+                st.markdown('</div>', unsafe_allow_html=True)
+                if confirmar_clicked:
                     for doc in docs_finales:
                         full_t = ""
                         p_map = {}
