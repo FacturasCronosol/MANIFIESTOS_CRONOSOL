@@ -32,7 +32,7 @@ st.markdown("""
 
     /* Botón Eliminar (Rojo - Mantener o Intensificar) */
     div[data-testid="stVerticalBlock"] div[data-testid="stHorizontalBlock"] .stButton button[key*="del_"] {
-        background-color: #e63e4b !important; 
+        background-color: #ffffff !important; 
         color: white !important; 
         border: none;
     }
