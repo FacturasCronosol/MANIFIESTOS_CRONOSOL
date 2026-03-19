@@ -37,7 +37,7 @@ st.markdown("""
         border: none;
     }
     
-    .stDownloadButton>button { background-color: #1b742f !important; color: white !important; }
+    .stDownloadButton>button { background-color: #29903b !important; color: white !important; }
     
     /* Estilo para cuando SÍ hay resultados (Azul Celeste) */
     .page-info { 
