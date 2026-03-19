@@ -148,28 +148,12 @@ st.markdown("""
 
 
 
-    /* Botones Carga Masiva - selector por data-testid y texto */
-    button[data-testid="stBaseButton-secondary"]:has(p):has(p:not(:empty)) { border-radius: 8px !important; }
-
-    button[data-testid="stBaseButton-secondary"]:has(div p) {
-        border: none !important;
-    }
-    /* Analizar → celeste */
-    button[data-testid="stBaseButton-secondary"]:has(div p:contains("Analizar")) {
-        background-color: #17a2b8 !important; color: white !important; border: none !important;
-    }
-    /* Cancelar → rojo */
-    button[data-testid="stBaseButton-secondary"]:has(div p:contains("Cancelar")) {
-        background-color: #dc3545 !important; color: white !important; border: none !important;
-    }
-    /* Confirmar → verde */
-    button[data-testid="stBaseButton-secondary"]:has(div p:contains("Confirmar")) {
-        background-color: #28a745 !important; color: white !important; border: none !important;
-    }
-    /* Quitar archivos → naranja */
-    button[data-testid="stBaseButton-secondary"]:has(div p:contains("Quitar")) {
-        background-color: #fd7e14 !important; color: white !important; border: none !important;
-    }
+    /* Botones Carga Masiva - selector por clase st-key generada por Streamlit */
+    .st-key-btn_analizar button  { background-color: #17a2b8 !important; color: white !important; border: none !important; }
+    .st-key-cancel_ocr button,
+    .st-key-cancel_ok button     { background-color: #dc3545 !important; color: white !important; border: none !important; }
+    .st-key-btn_confirmar button { background-color: #28a745 !important; color: white !important; border: none !important; }
+    .st-key-btn_quitar_error button { background-color: #fd7e14 !important; color: white !important; border: none !important; }
 
     </style>
     """, unsafe_allow_html=True)
