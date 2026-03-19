@@ -590,6 +590,69 @@ elif choice == "📂 Documentos":
     else:
         st.info("No hay documentos registrados aún en esta categoría.")
 
+    # --- ZONA DE DEPURACIÓN MASIVA ---
+    st.markdown("<br>", unsafe_allow_html=True)
+    with st.expander("⚠️ Depuración Masiva — Eliminar documentos por rango de fechas"):
+        st.warning("**Zona de riesgo.** Esta acción es irreversible. Los documentos eliminados no se pueden recuperar.")
+        st.divider()
+
+        # PASO 1: Filtros
+        st.markdown("**Paso 1 — Definir filtros**")
+        dep_col1, dep_col2, dep_col3 = st.columns(3)
+        dep_desde = dep_col1.date_input("Desde", value=datetime(2020, 1, 1).date(), key="dep_desde")
+        dep_hasta = dep_col2.date_input("Hasta", value=datetime.now().date(), key="dep_hasta")
+        dep_tipo = dep_col3.selectbox("Tipo de documento", ["Todos", "Factura de Compra", "Manifiesto de Aduana"], key="dep_tipo")
+
+        if dep_desde > dep_hasta:
+            st.error("La fecha 'Desde' no puede ser posterior a la fecha 'Hasta'.")
+        else:
+            # Query de preview en tiempo real
+            desde_str = dep_desde.strftime("%Y-%m-%d")
+            hasta_str = dep_hasta.strftime("%Y-%m-%d")
+
+            if dep_tipo == "Todos":
+                c.execute(
+                    "SELECT id, tipo, fecha_iso, nombre_archivo FROM documentos WHERE fecha_iso >= ? AND fecha_iso <= ? ORDER BY fecha_iso ASC",
+                    (desde_str, hasta_str)
+                )
+            else:
+                c.execute(
+                    "SELECT id, tipo, fecha_iso, nombre_archivo FROM documentos WHERE fecha_iso >= ? AND fecha_iso <= ? AND tipo = ? ORDER BY fecha_iso ASC",
+                    (desde_str, hasta_str, dep_tipo)
+                )
+            docs_a_eliminar = c.fetchall()
+
+            if not docs_a_eliminar:
+                st.info("Ningún documento coincide con los filtros seleccionados.")
+            else:
+                st.markdown(f"**Paso 2 — Preview:** Se eliminarían **{len(docs_a_eliminar)} documento(s)**")
+
+                # Lista de documentos afectados
+                with st.expander(f"Ver los {len(docs_a_eliminar)} documento(s) que serán eliminados"):
+                    for d in docs_a_eliminar:
+                        fecha_v = datetime.strptime(d[2], "%Y-%m-%d").strftime("%d/%m/%Y")
+                        st.markdown(f"- `{fecha_v}` · {d[1]} · **{d[3]}**")
+
+                st.divider()
+
+                # PASO 3: Confirmación
+                st.markdown("**Paso 3 — Confirmación**")
+                st.markdown("Para ejecutar la eliminación, escribe exactamente: `CONFIRMAR ELIMINACIÓN`")
+                frase = st.text_input("Frase de confirmación", key="dep_frase", placeholder="CONFIRMAR ELIMINACIÓN")
+
+                if frase == "CONFIRMAR ELIMINACIÓN":
+                    if st.button("🗑️ Ejecutar eliminación masiva", key="dep_ejecutar"):
+                        ids = [d[0] for d in docs_a_eliminar]
+                        c.execute(
+                            f"DELETE FROM documentos WHERE id IN ({','.join(['?']*len(ids))})",
+                            ids
+                        )
+                        conn.commit()
+                        st.success(f"✅ {len(ids)} documento(s) eliminado(s) correctamente.")
+                        st.rerun()
+                elif frase:
+                    st.error("La frase no coincide. Verifica mayúsculas y tildes.")
+
 # =============================================
 # MÓDULO: BUSCADOR (con caché + paginación + filtro)
 # =============================================
