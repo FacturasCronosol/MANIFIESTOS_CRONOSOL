@@ -41,11 +41,15 @@ st.markdown("""
     .upload-card-error { border: 2px solid #dc3545; padding: 15px; border-radius: 10px; margin-bottom: 15px; background-color: #fff5f5; }
     
     .zip-download-container {
-        background-color: #f8f9fa;
-        padding: 20px;
-        border-radius: 12px;
-        border: 1px solid #e9ecef;
+        padding: 0;
         margin-bottom: 25px;
+    }
+
+    /* Neutralizar borde blanco de st.container() en tema oscuro */
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        border: none !important;
+        box-shadow: none !important;
+        background: transparent !important;
     }
 
     /* Header de empresa en el buscador */
