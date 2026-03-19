@@ -220,10 +220,10 @@ with st.sidebar:
     if config["logo"]:
         st.markdown(f'<div class="sidebar-logo"><img src="data:image/png;base64,{config["logo"]}"></div>', unsafe_allow_html=True)
     
-    st.title(f"🛡️ {config['nombre']}")
+    st.title(f"{config['nombre']}")
     choice = st.radio("Menú Principal", ["🔍 Buscador", "📂 Documentos", "📤 Carga Masiva", "⚙️ Configuración"])
     st.divider()
-    st.info("Sistema de Trazabilidad Aduanera.")
+    st.info("TRAZABILIDAD DOCUMENTAL - CRONOSOL / FACTURAS DE COMPRAR Y DECLARACIONES DE IMPORTACIÓN")
 
 if choice == "⚙️ Configuración":
     st.header("Información de la Empresa")
