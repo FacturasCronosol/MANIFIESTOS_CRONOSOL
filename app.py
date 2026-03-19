@@ -112,7 +112,7 @@ st.markdown("""
     .sidebar-brand-name {
         font-size: 1em;
         font-weight: 700;
-        color: #f0f0f0;
+        color: inherit;
         line-height: 1.3;
         word-break: break-word;
         letter-spacing: 0.04em;
@@ -123,17 +123,17 @@ st.markdown("""
 
     /* Contadores en sidebar */
     .doc-counter-box {
-        background: rgba(255,255,255,0.06);
+        background: rgba(128,128,128,0.1);
         border-radius: 8px;
         padding: 10px 14px;
         margin-bottom: 8px;
         display: flex;
         justify-content: space-between;
         align-items: center;
-        border: 1px solid rgba(255,255,255,0.1);
+        border: 1px solid rgba(128,128,128,0.2);
     }
-    .doc-counter-label { font-size: 0.82em; color: #c0c0c0; font-weight: 500; }
-    .doc-counter-num { font-size: 1.15em; font-weight: 800; color: #f0f0f0; }
+    .doc-counter-label { font-size: 0.82em; color: inherit; font-weight: 500; opacity: 0.75; }
+    .doc-counter-num { font-size: 1.15em; font-weight: 800; color: inherit; }
 
     /* Paginación */
     .pagination-info {
