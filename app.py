@@ -56,37 +56,40 @@ st.markdown("""
     .company-header {
         display: flex;
         align-items: center;
-        gap: 18px;
-        background: linear-gradient(90deg, #f8f9fa 0%, #ffffff 100%);
-        border: 1px solid #e0e0e0;
-        border-radius: 12px;
-        padding: 16px 24px;
+        gap: 22px;
+        background: transparent;
+        border: 1px solid rgba(128,128,128,0.2);
+        border-radius: 14px;
+        padding: 20px 28px;
         margin-bottom: 24px;
         box-shadow: 0 2px 8px rgba(0,0,0,0.06);
     }
     .company-header img {
-        height: 56px;
-        width: 56px;
+        height: 80px;
+        width: 80px;
         object-fit: contain;
-        border-radius: 8px;
-        border: 1px solid #e9ecef;
+        border-radius: 12px;
+        border: 1px solid rgba(128,128,128,0.2);
         background: white;
-        padding: 4px;
+        padding: 6px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.1);
     }
     .company-header-text h2 {
-        margin: 0 0 2px 0;
-        font-size: 1.4em;
-        font-weight: 700;
-        color: #1a1a2e;
+        margin: 0 0 4px 0;
+        font-size: 1.7em;
+        font-weight: 800;
+        color: inherit;
         line-height: 1.2;
+        letter-spacing: 0.02em;
     }
     .company-header-text span {
         font-size: 0.85em;
-        color: #6c757d;
+        color: inherit;
         font-weight: 400;
+        opacity: 0.6;
     }
     .company-header-icon {
-        font-size: 2.8em;
+        font-size: 3.5em;
         line-height: 1;
     }
 
