@@ -223,7 +223,7 @@ with st.sidebar:
     st.title(f"{config['nombre']}")
     choice = st.radio("Menú Principal", ["🔍 Buscador", "📂 Documentos", "📤 Carga Masiva", "⚙️ Configuración"])
     st.divider()
-    st.info("TRAZABILIDAD DOCUMENTAL - CRONOSOL / FACTURAS DE COMPRAR Y DECLARACIONES DE IMPORTACIÓN")
+    st.info("TRAZABILIDAD DOCUMENTAL - CRONOSOL / FACTURAS DE COMPRAS Y DECLARACIONES DE IMPORTACIÓN")
 
 if choice == "⚙️ Configuración":
     st.header("Información de la Empresa")
