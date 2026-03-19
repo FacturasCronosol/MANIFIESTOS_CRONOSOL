@@ -21,23 +21,30 @@ st.set_page_config(
 # --- ESTILOS PERSONALIZADOS ---
 st.markdown("""
     <style>
-    .stButton>button { width: 100%; border-radius: 8px; height: 3.5em; font-weight: bold; }
-    
-    /* Botón Guardar (Ahora Azul Celeste Profesional) */
-    div[data-testid="stVerticalBlock"] div[data-testid="stHorizontalBlock"] .stButton button[key*="save_"] {
-        background-color: #007bff !important; 
-        color: white !important; 
-        border: none;
+    /* --- NUEVA CONFIGURACIÓN DE BOTONES --- */
+    /* Botón Guardar (Azul Celeste) */
+    button[key*="save_"] {
+        background-color: #007bff !important;
+        color: white !important;
+        border: 1px solid #0056b3 !important;
     }
 
-    /* Botón Eliminar (Rojo - Mantener o Intensificar) */
-    div[data-testid="stVerticalBlock"] div[data-testid="stHorizontalBlock"] .stButton button[key*="del_"] {
-        background-color: #e63e4b !important; 
-        color: white !important; 
-        border: none;
+    /* Botón Eliminar (Rojo) */
+    button[key*="del_"] {
+        background-color: #dc3545 !important;
+        color: white !important;
+        border: 1px solid #a71d2a !important;
     }
     
-    .stDownloadButton>button { background-color: #29903b !important; color: white !important; }
+    /* Efectos al pasar el mouse */
+    button[key*="save_"]:hover { background-color: #0056b3 !important; border-color: #004085 !important; }
+    button[key*="del_"]:hover { background-color: #a71d2a !important; border-color: #721c24 !important; }
+    
+    /* Botón Descargar (Verde - Para que no se pierda) */
+    .stDownloadButton>button { 
+        background-color: #28b873 !important; 
+        color: white !important; 
+    }
     
     /* Estilo para cuando SÍ hay resultados (Azul Celeste) */
     .page-info { 
@@ -226,12 +233,12 @@ def render_editor_documento(r, search_terms=[], es_inventario=False):
         else:
             st.error("¿Confirmar eliminación definitiva?")
             cc1, cc2 = st.columns(2)
-            if cc1.button("✅ Confirmar", key=f"c_ok_{doc_id}"):
+            if cc1.button("SI, ELIMINAR", key=f"del_ok_{doc_id}"):
                 c.execute("DELETE FROM documentos WHERE id=?", (doc_id,))
                 conn.commit()
                 del st.session_state[f"confirm_del_{doc_id}"]
                 st.rerun()
-            if cc2.button("❌ Cancelar", key=f"c_no_{doc_id}"):
+            if cc2.button("NO, CONSERVAR", key=f"save_{doc_id}"):
                 del st.session_state[f"confirm_del_{doc_id}"]
                 st.rerun()
 
