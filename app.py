@@ -776,7 +776,8 @@ elif choice == "🔍 Buscador":
                 for r in res_pagina:
                     coinciden = [q for q in queries if q in r[7]]
                     fecha_v = datetime.strptime(r[3], "%Y-%m-%d").strftime("%d/%m/%Y")
-                    with st.expander(f"🔍 {fecha_v} | {r[4]} (Coincide con: {', '.join(coinciden)})"):
+                    tipo_emoji = "🟢" if r[1] == "Factura de Compra" else "🔵"
+                    with st.expander(f"{tipo_emoji} {fecha_v} | {r[4]} (Coincide con: {', '.join(coinciden)})"):
                         render_editor_documento(r[:7], queries, es_inventario=False)
 
                 # Controles de paginación
