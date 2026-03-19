@@ -283,7 +283,6 @@ elif choice == "📤 Carga Masiva":
         for i, d in enumerate(st.session_state.pendientes):
             card_style = "upload-card" if d['ocr'] else "upload-card-error"
             with st.container():
-                st.markdown(f'<div class="{card_style}">', unsafe_allow_html=True)
                 c_up1, c_up2 = st.columns([1, 2])
                 with c_up1:
                     if d['ocr']:
