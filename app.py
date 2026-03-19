@@ -234,6 +234,8 @@ def render_editor_documento(r, search_terms=[], es_inventario=False):
                 st.session_state[f"confirm_del_{doc_id}"] = False
                 st.rerun()
 
+            st.markdown('</div>', unsafe_allow_html=True)    
+
         # 2. Botón Guardar
         # Cambiamos key a _v4
         if cb2.button("💾 Guardar Cambios", key=f"save_{doc_id}_v4"):
