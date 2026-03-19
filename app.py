@@ -499,11 +499,6 @@ elif choice == "📤 Carga Masiva":
         st.subheader("📋 Revisión antes de guardar")
         hay_errores_ocr = any(not d['ocr'] for d in st.session_state.pendientes)
         
-        if st.button("❌ Cancelar Carga"):
-            st.session_state.pendientes = []
-            st.session_state.uploader_id += 1
-            st.rerun()
-        
         docs_finales = []
         for i, d in enumerate(st.session_state.pendientes):
             c_up1, c_up2 = st.columns([1, 2])
@@ -526,28 +521,42 @@ elif choice == "📤 Carga Masiva":
 
         if hay_errores_ocr:
             st.warning("Debe corregir o eliminar los archivos sin OCR para poder continuar.")
-            if st.button("🗑️ Quitar archivos con error"):
-                st.session_state.pendientes = [d for d in st.session_state.pendientes if d['ocr']]
-                st.rerun()
+            btn_col1, btn_col2 = st.columns(2)
+            with btn_col1:
+                if st.button("❌ Cancelar Carga", key="cancel_ocr"):
+                    st.session_state.pendientes = []
+                    st.session_state.uploader_id += 1
+                    st.rerun()
+            with btn_col2:
+                if st.button("🗑️ Quitar archivos con error"):
+                    st.session_state.pendientes = [d for d in st.session_state.pendientes if d['ocr']]
+                    st.rerun()
         else:
-            if st.button("🚀 Confirmar y Guardar todo"):
-                for doc in docs_finales:
-                    full_t = ""
-                    p_map = {}
-                    with fitz.open(stream=doc['blob'], filetype="pdf") as pdf:
-                        for idx, p in enumerate(pdf):
-                            t = p.get_text().upper()
-                            full_t += t + " "
-                            p_map[idx+1] = t
-                    try:
-                        c.execute("INSERT INTO documentos (id, tipo, numero, fecha_iso, proveedor, contenido, nombre_archivo, pdf_blob, paginas_json) VALUES (?,?,?,?,?,?,?,?,?)",
-                                 (doc['id'], doc['tipo'], "GENERAL", doc['fecha'], "PROVEEDOR", full_t, doc['nombre'], doc['blob'], json.dumps(p_map)))
-                        conn.commit()
-                    except: pass
-                st.success("¡Documentos almacenados correctamente!")
-                st.session_state.pendientes = []
-                st.session_state.uploader_id += 1
-                st.rerun()
+            btn_col1, btn_col2 = st.columns(2)
+            with btn_col1:
+                if st.button("❌ Cancelar Carga", key="cancel_ok"):
+                    st.session_state.pendientes = []
+                    st.session_state.uploader_id += 1
+                    st.rerun()
+            with btn_col2:
+                if st.button("🚀 Confirmar y Guardar todo"):
+                    for doc in docs_finales:
+                        full_t = ""
+                        p_map = {}
+                        with fitz.open(stream=doc['blob'], filetype="pdf") as pdf:
+                            for idx, p in enumerate(pdf):
+                                t = p.get_text().upper()
+                                full_t += t + " "
+                                p_map[idx+1] = t
+                        try:
+                            c.execute("INSERT INTO documentos (id, tipo, numero, fecha_iso, proveedor, contenido, nombre_archivo, pdf_blob, paginas_json) VALUES (?,?,?,?,?,?,?,?,?)",
+                                     (doc['id'], doc['tipo'], "GENERAL", doc['fecha'], "PROVEEDOR", full_t, doc['nombre'], doc['blob'], json.dumps(p_map)))
+                            conn.commit()
+                        except: pass
+                    st.success("¡Documentos almacenados correctamente!")
+                    st.session_state.pendientes = []
+                    st.session_state.uploader_id += 1
+                    st.rerun()
 
 # =============================================
 # MÓDULO: INVENTARIO
