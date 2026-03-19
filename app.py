@@ -155,6 +155,9 @@ st.markdown("""
     .st-key-btn_guardar_config button  { background-color: #28a745 !important; color: white !important; border: none !important; }
     .st-key-btn_eliminar_logo button   { background-color: #dc3545 !important; color: white !important; border: none !important; }
 
+    /* Botón Depuración Masiva */
+    .st-key-dep_ejecutar button { background-color: #dc3545 !important; color: white !important; border: none !important; }
+
     </style>
     """, unsafe_allow_html=True)
 
@@ -649,7 +652,7 @@ elif choice == "📂 Documentos":
     # --- ZONA DE DEPURACIÓN MASIVA ---
     st.markdown("<br>", unsafe_allow_html=True)
     with st.expander("⚠️ Depuración Masiva — Eliminar documentos por rango de fechas"):
-        st.warning("**Zona de riesgo.** Esta acción es irreversible. Los documentos eliminados no se pueden recuperar.")
+        st.error("**Zona de riesgo.** Esta acción es irreversible. Los documentos eliminados no se pueden recuperar.")
         st.divider()
 
         # PASO 1: Filtros
