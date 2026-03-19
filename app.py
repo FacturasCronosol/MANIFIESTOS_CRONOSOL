@@ -21,19 +21,24 @@ st.set_page_config(
 # --- ESTILOS PERSONALIZADOS ---
 st.markdown("""
     <style>
-    /* --- NUEVA CONFIGURACIÓN DE BOTONES --- */
-    /* Botón Guardar (Azul Celeste) */
+    /* Botones que contienen 'save' en su key -> AZUL */
+    button[kind="secondary"] div[data-testid="stMarkdownContainer"] p:contains("Guardar"),
     button[key*="save_"] {
         background-color: #007bff !important;
         color: white !important;
-        border: 1px solid #0056b3 !important;
+        border: none !important;
     }
 
-    /* Botón Eliminar (Rojo) */
+    /* Botones que contienen 'del' en su key -> ROJO */
     button[key*="del_"] {
         background-color: #dc3545 !important;
         color: white !important;
-        border: 1px solid #a71d2a !important;
+        border: none !important;
+    }
+
+    /* Ajuste para que el texto sea blanco siempre */
+    button[key*="save_"] p, button[key*="del_"] p {
+        color: white !important;
     }
     
     /* Efectos al pasar el mouse */
@@ -227,22 +232,24 @@ def render_editor_documento(r, search_terms=[], es_inventario=False):
         cb1, cb2 = st.columns(2)
         
         if f"confirm_del_{doc_id}" not in st.session_state:
-            if cb1.button("🗑️ Eliminar Documento", key=f"del_{doc_id}"):
-                st.session_state[f"confirm_del_{doc_id}"] = True
-                st.rerun()
-        else:
-            st.error("¿Confirmar eliminación definitiva?")
-            cc1, cc2 = st.columns(2)
-            if cc1.button("SI, ELIMINAR", key=f"del_ok_{doc_id}"):
-                c.execute("DELETE FROM documentos WHERE id=?", (doc_id,))
-                conn.commit()
-                del st.session_state[f"confirm_del_{doc_id}"]
-                st.rerun()
-            if cc2.button("NO, CONSERVAR", key=f"save_{doc_id}"):
-                del st.session_state[f"confirm_del_{doc_id}"]
-                st.rerun()
+            # Botón Eliminar
+    if cb1.button("🗑️ Eliminar Documento", key=f"del_{doc_id}"):
+        st.session_state[f"confirm_del_{doc_id}"] = True
 
-        if cb2.button("💾 Guardar Cambios", key=f"save_{doc_id}"):
+    # Lógica de Confirmación (Esto evita el error de duplicados)
+    if st.session_state.get(f"confirm_del_{doc_id}", False):
+        st.error("¿Confirmar eliminación definitiva?")
+        cc1, cc2 = st.columns(2)
+        if cc1.button("✅ SI, ELIMINAR", key=f"del_confirm_yes_{doc_id}"): # Key única
+            eliminar_documento(doc_id)
+            st.success("Eliminado")
+            st.rerun()
+        if cc2.button("❌ NO, CONSERVAR", key=f"del_confirm_no_{doc_id}"): # Key única
+            st.session_state[f"confirm_del_{doc_id}"] = False
+            st.rerun()
+
+    # Botón Guardar
+    if cb2.button("💾 Guardar Cambios", key=f"save_{doc_id}"):
             c.execute("UPDATE documentos SET tipo=?, nombre_archivo=?, fecha_iso=? WHERE id=?", 
                      (edit_tipo, edit_nombre, edit_fecha.strftime("%Y-%m-%d"), doc_id))
             conn.commit()
