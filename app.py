@@ -495,8 +495,17 @@ elif choice == "📤 Carga Masiva":
 
     analizar_clicked = st.button("⚡ Analizar Documentos", key="btn_analizar")
     if analizar_clicked:
-        st.session_state.pendientes = []
+        MAX_MB = 50
+        MAX_BYTES = MAX_MB * 1024 * 1024
+        archivos_validos = []
         for f in archivos:
+            if f.size > MAX_BYTES:
+                st.error(f"❌ **{f.name}** supera el límite de {MAX_MB} MB ({f.size / 1024 / 1024:.1f} MB). No será procesado.")
+            else:
+                archivos_validos.append(f)
+
+        st.session_state.pendientes = []
+        for f in archivos_validos:
             b = f.read()
             doc_id = hashlib.sha256(b).hexdigest()
             with fitz.open(stream=b, filetype="pdf") as pdf:
