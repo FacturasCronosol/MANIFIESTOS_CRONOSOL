@@ -21,15 +21,15 @@ st.set_page_config(
 # --- ESTILOS PERSONALIZADOS ---
 st.markdown("""
     <style>
-    /* Botones que contienen 'save' en su key -> AZUL */
-    button[kind="secondary"] div[data-testid="stMarkdownContainer"] p:contains("Guardar"),
+    <style>
+    /* BOTÓN GUARDAR - AZUL */
     button[key*="save_"] {
         background-color: #007bff !important;
         color: white !important;
         border: none !important;
     }
 
-    /* Botones que contienen 'del' en su key -> ROJO */
+    /* BOTÓN ELIMINAR - ROJO */
     button[key*="del_"] {
         background-color: #dc3545 !important;
         color: white !important;
