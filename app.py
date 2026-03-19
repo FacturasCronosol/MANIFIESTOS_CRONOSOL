@@ -696,7 +696,7 @@ elif choice == "📂 Documentos":
 
                 # PASO 3: Confirmación
                 st.markdown("**Paso 3 — Confirmación**")
-                st.markdown("Para ejecutar la eliminación, escribe exactamente: `CONFIRMAR ELIMINACIÓN`")
+                st.markdown("Para ejecutar la eliminación, escribe exactamente: <span style='color:#dc3545;font-weight:700;font-family:monospace;'>CONFIRMAR ELIMINACIÓN</span>", unsafe_allow_html=True)
                 frase = st.text_input("Frase de confirmación", key="dep_frase", placeholder="CONFIRMAR ELIMINACIÓN")
 
                 if frase == "CONFIRMAR ELIMINACIÓN":
