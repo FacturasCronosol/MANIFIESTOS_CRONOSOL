@@ -48,13 +48,13 @@ st.markdown("""
 
     /* Estilo para cuando NO hay resultados (Rojo) */
     .error-alert { 
-        background-color: #721c24; 
+        background-color: #fabbc1; 
         padding: 10px; 
         border-radius: 5px; 
-        border-left: 5px solid #dc3545; 
+        border-left: 5px solid #721c24; 
         font-weight: bold; 
         margin-bottom: 10px; 
-        color: #ffffff; 
+        color: #721c24; 
     }
     
     .upload-card { border: 1px solid #ddd; padding: 15px; border-radius: 10px; margin-bottom: 15px; background-color: #ffffff; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
