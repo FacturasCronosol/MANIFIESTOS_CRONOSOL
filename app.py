@@ -35,7 +35,27 @@ st.markdown("""
     
     .stDownloadButton>button { background-color: #28b873 !important; color: white !important; }
 
-    .highlight-page { background-color: #721c24; padding: 10px; border-radius: 5px; border-left: 5px solid #dc3545; font-weight: bold; margin-bottom: 10px; color: #ffffff; }
+    /* Estilo para cuando SÍ hay resultados (Azul Celeste) */
+    .page-info { 
+        background-color: #e3f2fd; /* Azul muy claro */
+        padding: 10px; 
+        border-radius: 5px; 
+        border-left: 5px solid #03a9f4; /* Borde azul vibrante */
+        font-weight: bold; 
+        margin-bottom: 10px; 
+        color: #01579b; /* Texto azul oscuro para contraste */
+    }
+
+    /* Estilo para cuando NO hay resultados (Rojo) */
+    .error-alert { 
+        background-color: #721c24; 
+        padding: 10px; 
+        border-radius: 5px; 
+        border-left: 5px solid #dc3545; 
+        font-weight: bold; 
+        margin-bottom: 10px; 
+        color: #ffffff; 
+    }
     
     .upload-card { border: 1px solid #ddd; padding: 15px; border-radius: 10px; margin-bottom: 15px; background-color: #ffffff; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
     .upload-card-error { border: 2px solid #dc3545; padding: 15px; border-radius: 10px; margin-bottom: 15px; background-color: #fff5f5; }
@@ -161,7 +181,8 @@ def render_editor_documento(r, search_terms=[], es_inventario=False):
                     p_encontradas.append(int(p))
         
         if p_encontradas:
-            st.markdown(f'<div class="highlight-page">📍 Coincidencias en página(s): {", ".join(map(str, sorted(p_encontradas)))}</div>', unsafe_allow_html=True)
+            # Usamos "page-info" para el azul celeste
+        st.markdown(f'<div class="page-info">📍 Coincidencias en página(s): {", ".join(map(str, sorted(p_encontradas)))}</div>', unsafe_allow_html=True)
         
         p_ini = min(p_encontradas) if p_encontradas else 1
         
@@ -389,4 +410,5 @@ elif choice == "🔍 Buscador":
                 with st.expander(f"🔍 {fecha_v} | {r[4]} (Coincide con: {', '.join(coinciden)})"):
                     render_editor_documento(r[:7], queries, es_inventario=False)
         else:
-            st.warning("No se encontraron coincidencias para los términos ingresados.")
+            # Usamos "error-alert" para el fondo rojo
+        st.markdown('<div class="error-alert">❌ No se encontraron coincidencias para los términos ingresados.</div>', unsafe_allow_html=True)
