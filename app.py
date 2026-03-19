@@ -13,9 +13,9 @@ from datetime import datetime
 
 # Configuración profesional de la página
 st.set_page_config(
-    page_title="Gestión Cronosol - DIAN", 
+    page_title="GESTIÓN DOCUMENTAL - CRONOSOL", 
     layout="wide", 
-    page_icon="🛡️"
+    page_icon="🟡"
 )
 
 # --- ESTILOS PERSONALIZADOS ---
@@ -25,17 +25,17 @@ st.markdown("""
     
     /* Botón Guardar (Verde) */
     div[data-testid="stVerticalBlock"] div[data-testid="stHorizontalBlock"] .stButton button[key*="save_"] {
-        background-color: #28a745 !important; color: white !important; border: none;
+        background-color: #28b873 !important; color: white !important; border: none;
     }
 
     /* Botón Eliminar (Rojo) */
     div[data-testid="stVerticalBlock"] div[data-testid="stHorizontalBlock"] .stButton button[key*="del_"] {
-        background-color: #dc3545 !important; color: white !important; border: none;
+        background-color: #e63e4b !important; color: white !important; border: none;
     }
     
-    .stDownloadButton>button { background-color: #007bff !important; color: white !important; }
+    .stDownloadButton>button { background-color: #28b873 !important; color: white !important; }
 
-    .highlight-page { background-color: #fff3cd; padding: 10px; border-radius: 5px; border-left: 5px solid #ffc107; font-weight: bold; margin-bottom: 10px; color: #856404; }
+    .highlight-page { background-color: #fececd; padding: 10px; border-radius: 5px; border-left: 5px solid #ffc107; font-weight: bold; margin-bottom: 10px; color: #856404; }
     
     .upload-card { border: 1px solid #ddd; padding: 15px; border-radius: 10px; margin-bottom: 15px; background-color: #ffffff; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
     .upload-card-error { border: 2px solid #dc3545; padding: 15px; border-radius: 10px; margin-bottom: 15px; background-color: #fff5f5; }
