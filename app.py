@@ -21,26 +21,18 @@ st.set_page_config(
 # --- ESTILOS PERSONALIZADOS ---
 st.markdown("""
     <style>
-    /* 1. La primera columna (Botón Eliminar) -> ROJO */
-    [data-testid="stHorizontalBlock"] div:nth-child(1) button {
+    /* El primer botón de la zona crítica siempre será rojo */
+    .zona-critica [data-testid="stHorizontalBlock"] div:nth-child(1) button {
         background-color: #dc3545 !important;
         color: white !important;
-        border: 1px solid #a71d2a !important;
-        border-radius: 8px !important;
-        height: 3.5em !important;
     }
-
-    /* 2. La segunda columna (Botón Guardar) -> AZUL */
-    [data-testid="stHorizontalBlock"] div:nth-child(2) button {
+    /* El segundo botón de la zona crítica siempre será azul */
+    .zona-critica [data-testid="stHorizontalBlock"] div:nth-child(2) button {
         background-color: #007bff !important;
         color: white !important;
-        border: 1px solid #0056b3 !important;
-        border-radius: 8px !important;
-        height: 3.5em !important;
     }
-
-    /* Forzar que el texto (la etiqueta p) sea blanco en ambos */
-    [data-testid="stHorizontalBlock"] button p {
+    /* El texto de ambos siempre será blanco y negrita */
+    .zona-critica button p {
         color: white !important;
         font-weight: bold !important;
     }
