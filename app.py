@@ -597,9 +597,10 @@ elif choice == "📂 Documentos":
     col_v1, col_v2 = st.columns(2)
     f_tipo = col_v1.selectbox("Filtrar por tipo:", ["Todos", "Factura de Compra", "Manifiesto de Aduana"])
     f_order = col_v2.selectbox("Ordenar por:", ["Más recientes primero", "Más antiguos primero"])
+    f_nombre = st.text_input("🔎 Buscar por nombre de archivo", placeholder="Ej: KINO, HENESYS, FVX30432...", key="inv_nombre_search")
 
     # Reset página al cambiar filtros
-    filtro_key = f"{f_tipo}_{f_order}"
+    filtro_key = f"{f_tipo}_{f_order}_{f_nombre}"
     if 'inv_filtro_key' not in st.session_state or st.session_state.inv_filtro_key != filtro_key:
         st.session_state.inv_page = 0
         st.session_state.inv_filtro_key = filtro_key
@@ -618,6 +619,11 @@ elif choice == "📂 Documentos":
         total_inv = c.fetchone()[0]
         c.execute(f"SELECT id, tipo, numero, fecha_iso, nombre_archivo, paginas_json, pdf_blob FROM documentos WHERE tipo=? ORDER BY fecha_iso {order_sql}", (f_tipo,))
         docs_todos = c.fetchall()
+
+    # Filtrar por nombre en memoria (r[4] es nombre_archivo)
+    if f_nombre.strip():
+        docs_todos = [r for r in docs_todos if f_nombre.strip().upper() in r[4].upper()]
+    total_inv = len(docs_todos)
 
     if docs_todos:
         # ZIP siempre sobre todos los resultados del filtro activo
