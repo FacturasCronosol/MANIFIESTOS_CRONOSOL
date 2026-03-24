@@ -1,15 +1,13 @@
 import streamlit as st
 import fitz  # PyMuPDF
-import pandas as pd
-import sqlite3
 import hashlib
 import base64
 import json
 import re
-import os
 import zipfile
 from io import BytesIO
 from datetime import datetime
+from supabase import create_client, Client
 
 # Configuración profesional de la página
 st.set_page_config(
@@ -142,9 +140,7 @@ st.markdown("""
         margin: 8px 0 4px 0;
     }
 
-
-
-    /* Botones Carga Masiva - selector por clase st-key generada por Streamlit */
+    /* Botones Carga Masiva */
     .st-key-btn_analizar button  { background-color: #007bff !important; color: white !important; border: none !important; }
     .st-key-cancel_ocr button,
     .st-key-cancel_ok button     { background-color: #dc3545 !important; color: white !important; border: none !important; }
@@ -161,43 +157,64 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- CONSTANTES Y BASE DE DATOS ---
-def init_db():
-    conn = sqlite3.connect('gestion_cronosol_v4.db', check_same_thread=False)
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS documentos 
-                 (id TEXT PRIMARY KEY, tipo TEXT, numero TEXT, fecha_iso TEXT, 
-                  proveedor TEXT, contenido TEXT, nombre_archivo TEXT, pdf_blob BLOB, paginas_json TEXT)''')
-    # Tabla de configuración de empresa
-    c.execute('''CREATE TABLE IF NOT EXISTS config_empresa
-                 (clave TEXT PRIMARY KEY, valor BLOB)''')
-    conn.commit()
-    return conn, c
 
-conn, c = init_db()
+# =============================================
+# CONEXIÓN A SUPABASE
+# =============================================
 
-# --- FUNCIONES DE CONFIGURACIÓN DE EMPRESA ---
+@st.cache_resource
+def init_supabase() -> Client:
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+    return create_client(url, key)
 
-def guardar_config(clave, valor):
-    c.execute("INSERT OR REPLACE INTO config_empresa (clave, valor) VALUES (?, ?)", (clave, valor))
-    conn.commit()
+supabase = init_supabase()
+BUCKET = "documentos-pdf"
 
-def obtener_config(clave):
-    c.execute("SELECT valor FROM config_empresa WHERE clave=?", (clave,))
-    row = c.fetchone()
-    return row[0] if row else None
+
+# =============================================
+# FUNCIONES DE CONFIGURACIÓN DE EMPRESA
+# =============================================
+
+def guardar_config(clave: str, valor):
+    """Guarda o actualiza un valor en config_empresa."""
+    if isinstance(valor, (bytes, bytearray)):
+        valor_b64 = base64.b64encode(valor).decode("utf-8")
+    else:
+        valor_b64 = valor
+    supabase.table("config_empresa").upsert({"clave": clave, "valor": valor_b64}).execute()
+
+def obtener_config(clave: str):
+    """Obtiene un valor de config_empresa. Devuelve bytes si era binario, str si era texto."""
+    res = supabase.table("config_empresa").select("valor").eq("clave", clave).execute()
+    if res.data:
+        val = res.data[0]["valor"]
+        # Intentar decodificar como base64 (logos)
+        try:
+            return base64.b64decode(val)
+        except Exception:
+            return val
+    return None
 
 def obtener_contadores():
-    c.execute("SELECT tipo, COUNT(*) FROM documentos GROUP BY tipo")
-    rows = c.fetchall()
-    total = sum(r[1] for r in rows)
-    mapa = {r[0]: r[1] for r in rows}
+    """Devuelve (total, {tipo: count}) consultando Supabase."""
+    res = supabase.table("documentos").select("tipo").execute()
+    rows = res.data or []
+    total = len(rows)
+    mapa = {}
+    for r in rows:
+        t = r["tipo"]
+        mapa[t] = mapa.get(t, 0) + 1
     return total, mapa
 
-# --- FUNCIONES DE PROCESAMIENTO ---
+
+# =============================================
+# FUNCIONES DE PROCESAMIENTO PDF
+# =============================================
 
 def resaltar_pdf_multiple(pdf_bytes, queries):
-    if not queries: return pdf_bytes
+    if not queries:
+        return pdf_bytes
     try:
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
         for page in doc:
@@ -209,7 +226,8 @@ def resaltar_pdf_multiple(pdf_bytes, queries):
         output = doc.write()
         doc.close()
         return output
-    except: return pdf_bytes
+    except:
+        return pdf_bytes
 
 def abrir_pdf_js(bin_file, page_num=1, btn_id="", label="📄 Ver PDF", color="#007bff"):
     b64 = base64.b64encode(bin_file).decode('utf-8')
@@ -231,51 +249,173 @@ def abrir_pdf_js(bin_file, page_num=1, btn_id="", label="📄 Ver PDF", color="#
 
 def extraer_fecha_texto(texto):
     texto_limpio = texto.upper()
-    patrones = [r'(\d{1,2}[/-]\d{1,2}[/-]\d{4})', r'(\d{4}[/-]\d{1,2}[/-]\d{1,2})', r'(\d{1,2}\s+[A-Z]{3,10}\s+\d{4})']
+    patrones = [
+        r'(\d{1,2}[/-]\d{1,2}[/-]\d{4})',
+        r'(\d{4}[/-]\d{1,2}[/-]\d{1,2})',
+        r'(\d{1,2}\s+[A-Z]{3,10}\s+\d{4})'
+    ]
     for pat in patrones:
         match = re.search(pat, texto_limpio)
         if match:
             f = match.group(0)
             try:
                 parts = re.split(r'[/-]', f)
-                if len(parts[0]) == 4: return f"{parts[0]}-{int(parts[1]):02d}-{int(parts[2]):02d}"
-                else: return f"{parts[2]}-{int(parts[1]):02d}-{int(parts[0]):02d}"
-            except: pass
+                if len(parts[0]) == 4:
+                    return f"{parts[0]}-{int(parts[1]):02d}-{int(parts[2]):02d}"
+                else:
+                    return f"{parts[2]}-{int(parts[1]):02d}-{int(parts[0]):02d}"
+            except:
+                pass
     return datetime.now().strftime("%Y-%m-%d")
 
+
+# =============================================
+# FUNCIONES DE STORAGE (PDFs en Supabase)
+# =============================================
+
+def subir_pdf_storage(doc_id: str, pdf_bytes: bytes) -> str:
+    """Sube el PDF a Supabase Storage y devuelve el path."""
+    path = f"{doc_id}.pdf"
+    supabase.storage.from_(BUCKET).upload(
+        path,
+        pdf_bytes,
+        {"content-type": "application/pdf", "upsert": "true"}
+    )
+    return path
+
+def descargar_pdf_storage(storage_path: str) -> bytes:
+    """Descarga el PDF desde Supabase Storage."""
+    res = supabase.storage.from_(BUCKET).download(storage_path)
+    return res
+
+def eliminar_pdf_storage(storage_path: str):
+    """Elimina el PDF del bucket."""
+    try:
+        supabase.storage.from_(BUCKET).remove([storage_path])
+    except:
+        pass
+
+
+# =============================================
+# FUNCIONES DE BASE DE DATOS (Supabase PostgreSQL)
+# =============================================
+
+def insertar_documento(doc_id, tipo, numero, fecha_iso, proveedor, contenido, nombre_archivo, storage_path, paginas_json):
+    supabase.table("documentos").upsert({
+        "id": doc_id,
+        "tipo": tipo,
+        "numero": numero,
+        "fecha_iso": fecha_iso,
+        "proveedor": proveedor,
+        "contenido": contenido,
+        "nombre_archivo": nombre_archivo,
+        "storage_path": storage_path,
+        "paginas_json": paginas_json
+    }).execute()
+
+def actualizar_documento(doc_id, tipo, nombre_archivo, fecha_iso):
+    supabase.table("documentos").update({
+        "tipo": tipo,
+        "nombre_archivo": nombre_archivo,
+        "fecha_iso": fecha_iso
+    }).eq("id", doc_id).execute()
+
+def eliminar_documento(doc_id, storage_path):
+    supabase.table("documentos").delete().eq("id", doc_id).execute()
+    eliminar_pdf_storage(storage_path)
+
+def ejecutar_busqueda(queries):
+    """Busca en el campo contenido (ilike para cada término) y devuelve lista de filas."""
+    # Construimos filtros OR manualmente: traemos todos y filtramos en memoria
+    # para mantener compatibilidad con el plan gratuito de Supabase
+    res = supabase.table("documentos").select(
+        "id, tipo, numero, fecha_iso, nombre_archivo, paginas_json, storage_path, contenido"
+    ).order("fecha_iso", desc=True).execute()
+
+    rows = res.data or []
+    resultados = []
+    for r in rows:
+        contenido = (r.get("contenido") or "").upper()
+        if any(q.upper() in contenido for q in queries):
+            resultados.append((
+                r["id"], r["tipo"], r["numero"], r["fecha_iso"],
+                r["nombre_archivo"], r["paginas_json"], r["storage_path"], contenido
+            ))
+    return resultados
+
+def obtener_todos_documentos(tipo_filtro=None, order_desc=True):
+    """Obtiene todos los documentos con filtro opcional de tipo."""
+    query = supabase.table("documentos").select(
+        "id, tipo, numero, fecha_iso, nombre_archivo, paginas_json, storage_path"
+    )
+    if tipo_filtro and tipo_filtro != "Todos":
+        query = query.eq("tipo", tipo_filtro)
+    order = "desc" if order_desc else "asc"
+    res = query.order("fecha_iso", desc=order_desc).execute()
+    rows = res.data or []
+    return [
+        (r["id"], r["tipo"], r["numero"], r["fecha_iso"],
+         r["nombre_archivo"], r["paginas_json"], r["storage_path"])
+        for r in rows
+    ]
+
+def obtener_docs_rango_fecha(desde_str, hasta_str, tipo_filtro=None):
+    query = supabase.table("documentos").select(
+        "id, tipo, fecha_iso, nombre_archivo, storage_path"
+    ).gte("fecha_iso", desde_str).lte("fecha_iso", hasta_str).order("fecha_iso")
+    if tipo_filtro and tipo_filtro != "Todos":
+        query = query.eq("tipo", tipo_filtro)
+    res = query.execute()
+    rows = res.data or []
+    return [(r["id"], r["tipo"], r["fecha_iso"], r["nombre_archivo"], r["storage_path"]) for r in rows]
+
+
+# =============================================
+# ZIP (descarga de PDFs desde Storage)
+# =============================================
+
 def generar_zip_blob(resultados, usar_resaltado=False, queries=[]):
+    """
+    resultados: lista de tuplas donde el índice 6 es storage_path.
+    Descarga cada PDF desde Supabase Storage y arma el ZIP.
+    """
     buf = BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         for r in resultados:
             nombre = r[4] if r[4].lower().endswith(".pdf") else f"{r[4]}.pdf"
-            blob = r[6]
-            if usar_resaltado and queries:
-                blob = resaltar_pdf_multiple(blob, queries)
-            zf.writestr(nombre, blob)
+            storage_path = r[6]
+            try:
+                blob = descargar_pdf_storage(storage_path)
+                if usar_resaltado and queries:
+                    blob = resaltar_pdf_multiple(blob, queries)
+                zf.writestr(nombre, blob)
+            except:
+                pass
     return buf.getvalue()
 
-# --- FUNCIÓN DE BÚSQUEDA CON CACHÉ EN SESSION STATE ---
 
-def ejecutar_busqueda(queries):
-    """Ejecuta la búsqueda y guarda resultados en session_state para evitar re-queries al paginar."""
-    sql_cond = " OR ".join(["contenido LIKE ?" for _ in queries])
-    params = [f"%{q}%" for q in queries]
-    c.execute(
-        f"SELECT id, tipo, numero, fecha_iso, nombre_archivo, paginas_json, pdf_blob, contenido "
-        f"FROM documentos WHERE {sql_cond} ORDER BY fecha_iso DESC",
-        params
-    )
-    return c.fetchall()
-
-# --- COMPONENTES DE BRANDING ---
+# =============================================
+# COMPONENTES DE BRANDING
+# =============================================
 
 def render_company_header():
-    """Header de empresa para el módulo de Buscador."""
-    nombre = obtener_config("nombre_empresa") or ""
-    logo_blob = obtener_config("logo_empresa")
+    nombre = ""
+    logo_blob = None
+    try:
+        nombre = obtener_config("nombre_empresa") or ""
+        if isinstance(nombre, bytes):
+            nombre = nombre.decode("utf-8")
+    except:
+        pass
+    try:
+        logo_blob = obtener_config("logo_empresa")
+        if isinstance(logo_blob, str):
+            logo_blob = None
+    except:
+        pass
 
     if not nombre and not logo_blob:
-        return  # Sin configuración, no mostrar nada
+        return
 
     if logo_blob:
         logo_b64 = base64.b64encode(logo_blob).decode('utf-8')
@@ -295,12 +435,23 @@ def render_company_header():
     """, unsafe_allow_html=True)
 
 def render_sidebar_brand():
-    """Branding en el sidebar: logo + nombre + contadores."""
-    nombre = obtener_config("nombre_empresa") or ""
-    logo_blob = obtener_config("logo_empresa")
+    nombre = ""
+    logo_blob = None
+    try:
+        nombre = obtener_config("nombre_empresa") or ""
+        if isinstance(nombre, bytes):
+            nombre = nombre.decode("utf-8")
+    except:
+        pass
+    try:
+        logo_blob = obtener_config("logo_empresa")
+        if isinstance(logo_blob, str):
+            logo_blob = None
+    except:
+        pass
+
     total, mapa = obtener_contadores()
 
-    # Logo o ícono
     if logo_blob:
         logo_b64 = base64.b64encode(logo_blob).decode('utf-8')
         logo_html = f'<img src="data:image/png;base64,{logo_b64}" alt="Logo"/>'
@@ -316,7 +467,6 @@ def render_sidebar_brand():
     </div>
     """, unsafe_allow_html=True)
 
-    # Contadores
     st.markdown(f"""
     <div class="doc-counter-box">
         <span class="doc-counter-label">📄 Total documentos</span>
@@ -332,12 +482,15 @@ def render_sidebar_brand():
     </div>
     """, unsafe_allow_html=True)
 
-# --- INTERFAZ DE EDICIÓN ---
+
+# =============================================
+# EDITOR DE DOCUMENTO
+# =============================================
 
 def render_editor_documento(r, search_terms=[], es_inventario=False):
-    doc_id, tipo, num, fecha_iso, nombre, pags, blob = r
+    doc_id, tipo, num, fecha_iso, nombre, pags, storage_path = r
     t1, t2 = st.tabs(["📄 Visualización", "⚙️ Gestión de Datos"])
-    
+
     with t1:
         p_dict = json.loads(pags)
         p_encontradas = []
@@ -345,12 +498,19 @@ def render_editor_documento(r, search_terms=[], es_inventario=False):
             for p, cont in p_dict.items():
                 if any(q.upper() in cont.upper() for q in search_terms):
                     p_encontradas.append(int(p))
-        
+
         if p_encontradas:
             st.markdown(f'<div class="highlight-page">📍 Coincidencias en página(s): {", ".join(map(str, sorted(p_encontradas)))}</div>', unsafe_allow_html=True)
-        
+
         p_ini = min(p_encontradas) if p_encontradas else 1
-        
+
+        # Descargar PDF desde Storage
+        try:
+            blob = descargar_pdf_storage(storage_path)
+        except:
+            st.error("No se pudo cargar el PDF desde el almacenamiento.")
+            return
+
         if not es_inventario and search_terms:
             c1, c2 = st.columns(2)
             with c1:
@@ -365,14 +525,16 @@ def render_editor_documento(r, search_terms=[], es_inventario=False):
         edit_nombre = st.text_input("Nombre del archivo", value=nombre, key=f"edit_n_{doc_id}")
         col_ed1, col_ed2 = st.columns(2)
         edit_tipo = col_ed1.selectbox("Tipo de Documento", ["Factura de Compra", "Manifiesto de Aduana"], index=0 if "Factura" in tipo else 1, key=f"edit_t_{doc_id}")
-        
-        try: f_dt = datetime.strptime(fecha_iso, "%Y-%m-%d").date()
-        except: f_dt = datetime.now().date()
+
+        try:
+            f_dt = datetime.strptime(fecha_iso, "%Y-%m-%d").date()
+        except:
+            f_dt = datetime.now().date()
         edit_fecha = col_ed2.date_input("Fecha", value=f_dt, key=f"edit_f_{doc_id}")
-        
+
         st.divider()
         cb1, cb2 = st.columns(2)
-        
+
         if f"confirm_del_{doc_id}" not in st.session_state:
             if cb1.button("🗑️ Eliminar Documento", key=f"del_{doc_id}"):
                 st.session_state[f"confirm_del_{doc_id}"] = True
@@ -381,8 +543,7 @@ def render_editor_documento(r, search_terms=[], es_inventario=False):
             st.error("¿Confirmar eliminación definitiva?")
             cc1, cc2 = st.columns(2)
             if cc1.button("✅ Confirmar", key=f"c_ok_{doc_id}"):
-                c.execute("DELETE FROM documentos WHERE id=?", (doc_id,))
-                conn.commit()
+                eliminar_documento(doc_id, storage_path)
                 del st.session_state[f"confirm_del_{doc_id}"]
                 st.rerun()
             if cc2.button("❌ Cancelar", key=f"c_no_{doc_id}"):
@@ -390,13 +551,14 @@ def render_editor_documento(r, search_terms=[], es_inventario=False):
                 st.rerun()
 
         if cb2.button("💾 Guardar Cambios", key=f"save_{doc_id}"):
-            c.execute("UPDATE documentos SET tipo=?, nombre_archivo=?, fecha_iso=? WHERE id=?", 
-                     (edit_tipo, edit_nombre, edit_fecha.strftime("%Y-%m-%d"), doc_id))
-            conn.commit()
+            actualizar_documento(doc_id, edit_tipo, edit_nombre, edit_fecha.strftime("%Y-%m-%d"))
             st.success("¡Documento actualizado!")
             st.rerun()
 
-# --- APLICACIÓN PRINCIPAL ---
+
+# =============================================
+# APLICACIÓN PRINCIPAL — SESSION STATE
+# =============================================
 
 if 'pendientes' not in st.session_state: st.session_state.pendientes = []
 if 'uploader_id' not in st.session_state: st.session_state.uploader_id = 0
@@ -414,23 +576,30 @@ with st.sidebar:
     st.divider()
     st.info("Sistema de Trazabilidad Aduanera.")
 
+
 # =============================================
 # MÓDULO: PERSONALIZACIÓN
 # =============================================
+
 if choice == "⚙️ Personalización":
     st.header("⚙️ Personalización de la Aplicación")
     st.write("Configura el nombre y logo de tu empresa. Estos datos se muestran en el sidebar y en el módulo de búsqueda.")
     st.divider()
 
-    nombre_actual = obtener_config("nombre_empresa") or ""
-    logo_actual = obtener_config("logo_empresa")
+    nombre_actual_raw = obtener_config("nombre_empresa")
+    nombre_actual = ""
+    if nombre_actual_raw:
+        nombre_actual = nombre_actual_raw.decode("utf-8") if isinstance(nombre_actual_raw, bytes) else nombre_actual_raw
+
+    logo_actual_raw = obtener_config("logo_empresa")
+    logo_actual = logo_actual_raw if isinstance(logo_actual_raw, bytes) else None
 
     col_p1, col_p2 = st.columns([2, 1])
 
     with col_p1:
         st.subheader("🏢 Datos de la Empresa")
         nuevo_nombre = st.text_input("Nombre de la empresa", value=nombre_actual, placeholder="Ej: Cronosol S.A.S.")
-        
+
         st.subheader("🖼️ Logo de la Empresa")
         st.caption("Formatos aceptados: PNG, JPG, JPEG. Recomendado: imagen cuadrada, mínimo 128×128 px.")
         logo_file = st.file_uploader("Subir logo", type=["png", "jpg", "jpeg"], label_visibility="collapsed")
@@ -450,20 +619,21 @@ if choice == "⚙️ Personalización":
             else:
                 st.warning("No se realizaron cambios. Ingresa un nombre o sube un logo.")
 
-        # Opción para limpiar logo
         if logo_actual:
             if st.button("🗑️ Eliminar logo actual", key="btn_eliminar_logo", use_container_width=True):
-                c.execute("DELETE FROM config_empresa WHERE clave='logo_empresa'")
-                conn.commit()
+                supabase.table("config_empresa").delete().eq("clave", "logo_empresa").execute()
                 st.rerun()
 
     with col_p2:
         st.subheader("👁️ Vista Previa")
         preview_nombre = nuevo_nombre.strip() if nuevo_nombre.strip() else (nombre_actual or "Mi Empresa")
-        
+
+        logo_preview = None
         if logo_file:
             logo_file.seek(0)
             logo_preview = logo_file.read()
+
+        if logo_preview:
             logo_b64 = base64.b64encode(logo_preview).decode('utf-8')
             preview_logo_html = f'<img src="data:image/png;base64,{logo_b64}" style="height:56px;width:56px;object-fit:contain;border-radius:8px;border:1px solid #e9ecef;background:white;padding:4px;" alt="Logo"/>'
         elif logo_actual:
@@ -485,9 +655,11 @@ if choice == "⚙️ Personalización":
         <p style="font-size:0.75em;color:#aaa;margin-top:8px;text-align:center;">Vista previa del header en Buscador</p>
         """, unsafe_allow_html=True)
 
+
 # =============================================
 # MÓDULO: CARGA MASIVA
 # =============================================
+
 elif choice == "📤 Carga Masiva":
     st.header("Carga Masiva de Documentos")
     tipo_up = st.radio("Tipo de Documento:", ["Factura de Compra", "Manifiesto de Aduana"], horizontal=True)
@@ -514,10 +686,10 @@ elif choice == "📤 Carga Masiva":
                     full_text += page.get_text()
                 tiene_ocr = len(full_text.strip()) > 5
                 st.session_state.pendientes.append({
-                    "id": doc_id, 
-                    "nombre": f.name, 
-                    "blob": b, 
-                    "fecha": extraer_fecha_texto(full_text), 
+                    "id": doc_id,
+                    "nombre": f.name,
+                    "blob": b,
+                    "fecha": extraer_fecha_texto(full_text),
                     "tipo": tipo_up,
                     "ocr": tiene_ocr
                 })
@@ -525,14 +697,16 @@ elif choice == "📤 Carga Masiva":
     if st.session_state.pendientes:
         st.subheader("📋 Revisión antes de guardar")
         hay_errores_ocr = any(not d['ocr'] for d in st.session_state.pendientes)
-        
+
         docs_finales = []
         for i, d in enumerate(st.session_state.pendientes):
             c_up1, c_up2 = st.columns([1, 2])
             with c_up1:
                 if d['ocr']:
-                    try: f_val = datetime.strptime(d['fecha'], "%Y-%m-%d").date()
-                    except: f_val = datetime.now().date()
+                    try:
+                        f_val = datetime.strptime(d['fecha'], "%Y-%m-%d").date()
+                    except:
+                        f_val = datetime.now().date()
                     new_f = st.date_input(f"Fecha", value=f_val, key=f"f_up_{i}")
                 else:
                     st.error("⚠️ ERROR: Sin OCR")
@@ -571,6 +745,7 @@ elif choice == "📤 Carga Masiva":
             with btn_col2:
                 confirmar_clicked = st.button("🚀 Confirmar y Guardar todo", key="btn_confirmar")
                 if confirmar_clicked:
+                    errores = []
                     for doc in docs_finales:
                         full_t = ""
                         p_map = {}
@@ -578,20 +753,30 @@ elif choice == "📤 Carga Masiva":
                             for idx, p in enumerate(pdf):
                                 t = p.get_text().upper()
                                 full_t += t + " "
-                                p_map[idx+1] = t
+                                p_map[idx + 1] = t
                         try:
-                            c.execute("INSERT INTO documentos (id, tipo, numero, fecha_iso, proveedor, contenido, nombre_archivo, pdf_blob, paginas_json) VALUES (?,?,?,?,?,?,?,?,?)",
-                                     (doc['id'], doc['tipo'], "GENERAL", doc['fecha'], "PROVEEDOR", full_t, doc['nombre'], doc['blob'], json.dumps(p_map)))
-                            conn.commit()
-                        except: pass
-                    st.success("¡Documentos almacenados correctamente!")
+                            storage_path = subir_pdf_storage(doc['id'], doc['blob'])
+                            insertar_documento(
+                                doc['id'], doc['tipo'], "GENERAL", doc['fecha'],
+                                "PROVEEDOR", full_t, doc['nombre'],
+                                storage_path, json.dumps(p_map)
+                            )
+                        except Exception as e:
+                            errores.append(f"{doc['nombre']}: {e}")
+
+                    if errores:
+                        st.error("Algunos documentos no se pudieron guardar:\n" + "\n".join(errores))
+                    else:
+                        st.success("¡Documentos almacenados correctamente!")
                     st.session_state.pendientes = []
                     st.session_state.uploader_id += 1
                     st.rerun()
 
+
 # =============================================
 # MÓDULO: INVENTARIO
 # =============================================
+
 elif choice == "📂 Documentos":
     st.header("Inventario de Documentos")
     col_v1, col_v2 = st.columns(2)
@@ -605,33 +790,24 @@ elif choice == "📂 Documentos":
         st.session_state.inv_page = 0
         st.session_state.inv_filtro_key = filtro_key
 
-    order_sql = "DESC" if f_order == "Más recientes primero" else "ASC"
+    order_desc = f_order == "Más recientes primero"
     INV_POR_PAGINA = 100
 
-    # Contar total para paginación y ZIP (sin LIMIT)
-    if f_tipo == "Todos":
-        c.execute(f"SELECT COUNT(*) FROM documentos")
-        total_inv = c.fetchone()[0]
-        c.execute(f"SELECT id, tipo, numero, fecha_iso, nombre_archivo, paginas_json, pdf_blob FROM documentos ORDER BY fecha_iso {order_sql}")
-        docs_todos = c.fetchall()
-    else:
-        c.execute(f"SELECT COUNT(*) FROM documentos WHERE tipo=?", (f_tipo,))
-        total_inv = c.fetchone()[0]
-        c.execute(f"SELECT id, tipo, numero, fecha_iso, nombre_archivo, paginas_json, pdf_blob FROM documentos WHERE tipo=? ORDER BY fecha_iso {order_sql}", (f_tipo,))
-        docs_todos = c.fetchall()
+    docs_todos = obtener_todos_documentos(f_tipo, order_desc)
 
-    # Filtrar por nombre en memoria (r[4] es nombre_archivo)
+    # Filtrar por nombre en memoria
     if f_nombre.strip():
         docs_todos = [r for r in docs_todos if f_nombre.strip().upper() in r[4].upper()]
     total_inv = len(docs_todos)
 
     if docs_todos:
-        # ZIP siempre sobre todos los resultados del filtro activo
         st.markdown('<div class="zip-download-container">', unsafe_allow_html=True)
         label_zip = f"Descargar {f_tipo}" if f_tipo != "Todos" else "Descargar Todo el Inventario"
-        zip_data = generar_zip_blob(docs_todos)
         st.write(f"📦 **Acciones para {total_inv} documentos encontrados:**")
-        st.download_button(f"📥 {label_zip} (.zip)", zip_data, f"{f_tipo.lower().replace(' ','_')}.zip")
+        if st.button(f"📥 Generar {label_zip} (.zip)"):
+            with st.spinner("Generando ZIP, esto puede tomar unos segundos..."):
+                zip_data = generar_zip_blob(docs_todos)
+            st.download_button(f"⬇️ Descargar ZIP", zip_data, f"{f_tipo.lower().replace(' ','_')}.zip")
         st.markdown('</div>', unsafe_allow_html=True)
 
         # Slicing para la página actual
@@ -670,7 +846,6 @@ elif choice == "📂 Documentos":
         st.error("**Zona de riesgo.** Esta acción es irreversible. Los documentos eliminados no se pueden recuperar.")
         st.divider()
 
-        # PASO 1: Filtros
         st.markdown("**Paso 1 — Definir filtros**")
         dep_col1, dep_col2, dep_col3 = st.columns(3)
         dep_desde = dep_col1.date_input("Desde", value=datetime(2020, 1, 1).date(), key="dep_desde")
@@ -680,56 +855,39 @@ elif choice == "📂 Documentos":
         if dep_desde > dep_hasta:
             st.error("La fecha 'Desde' no puede ser posterior a la fecha 'Hasta'.")
         else:
-            # Query de preview en tiempo real
             desde_str = dep_desde.strftime("%Y-%m-%d")
             hasta_str = dep_hasta.strftime("%Y-%m-%d")
-
-            if dep_tipo == "Todos":
-                c.execute(
-                    "SELECT id, tipo, fecha_iso, nombre_archivo FROM documentos WHERE fecha_iso >= ? AND fecha_iso <= ? ORDER BY fecha_iso ASC",
-                    (desde_str, hasta_str)
-                )
-            else:
-                c.execute(
-                    "SELECT id, tipo, fecha_iso, nombre_archivo FROM documentos WHERE fecha_iso >= ? AND fecha_iso <= ? AND tipo = ? ORDER BY fecha_iso ASC",
-                    (desde_str, hasta_str, dep_tipo)
-                )
-            docs_a_eliminar = c.fetchall()
+            docs_a_eliminar = obtener_docs_rango_fecha(desde_str, hasta_str, dep_tipo)
 
             if not docs_a_eliminar:
                 st.info("Ningún documento coincide con los filtros seleccionados.")
             else:
                 st.markdown(f"**Paso 2 — Preview:** Se eliminarían **{len(docs_a_eliminar)} documento(s)**")
 
-                # Lista de documentos afectados
                 with st.expander(f"Ver los {len(docs_a_eliminar)} documento(s) que serán eliminados"):
                     for d in docs_a_eliminar:
                         fecha_v = datetime.strptime(d[2], "%Y-%m-%d").strftime("%d/%m/%Y")
                         st.markdown(f"- `{fecha_v}` · {d[1]} · **{d[3]}**")
 
                 st.divider()
-
-                # PASO 3: Confirmación
                 st.markdown("**Paso 3 — Confirmación**")
                 st.markdown("Para ejecutar la eliminación, escribe exactamente: <span style='color:#dc3545;font-weight:700;font-family:monospace;'>CONFIRMAR ELIMINACIÓN</span>", unsafe_allow_html=True)
                 frase = st.text_input("Frase de confirmación", key="dep_frase", placeholder="CONFIRMAR ELIMINACIÓN")
 
                 if frase == "CONFIRMAR ELIMINACIÓN":
                     if st.button("🗑️ Ejecutar eliminación masiva", key="dep_ejecutar"):
-                        ids = [d[0] for d in docs_a_eliminar]
-                        c.execute(
-                            f"DELETE FROM documentos WHERE id IN ({','.join(['?']*len(ids))})",
-                            ids
-                        )
-                        conn.commit()
-                        st.success(f"✅ {len(ids)} documento(s) eliminado(s) correctamente.")
+                        for d in docs_a_eliminar:
+                            eliminar_documento(d[0], d[4])
+                        st.success(f"✅ {len(docs_a_eliminar)} documento(s) eliminado(s) correctamente.")
                         st.rerun()
                 elif frase:
                     st.error("La frase no coincide. Verifica mayúsculas y tildes.")
 
+
 # =============================================
-# MÓDULO: BUSCADOR (con caché + paginación + filtro)
+# MÓDULO: BUSCADOR
 # =============================================
+
 elif choice == "🔍 Buscador":
     render_company_header()
     st.header("Buscador Inteligente Multitermino")
@@ -738,7 +896,6 @@ elif choice == "🔍 Buscador":
     if query_in:
         queries = [q.strip() for q in query_in.split(",") if q.strip()]
 
-        # Caché: solo ejecutar query si cambió el término de búsqueda
         if query_in != st.session_state.last_query:
             st.session_state.search_results = ejecutar_busqueda(queries)
             st.session_state.last_query = query_in
@@ -747,7 +904,6 @@ elif choice == "🔍 Buscador":
         res_completo = st.session_state.search_results
 
         if res_completo:
-            # --- SWITCHES DE FILTRO ---
             st.write("**Filtrar por tipo:**")
             sw1, sw2, _ = st.columns([1.4, 1.8, 3])
             with sw1:
@@ -755,7 +911,6 @@ elif choice == "🔍 Buscador":
             with sw2:
                 mostrar_manifiestos = st.toggle("Manifiestos de Aduana", value=True, key="sw_manifiestos")
 
-            # Aplicar filtro en memoria según estado de los switches
             if mostrar_facturas and mostrar_manifiestos:
                 res = res_completo
                 label_filtro = ""
@@ -777,17 +932,21 @@ elif choice == "🔍 Buscador":
                 fin = inicio + RESULTADOS_POR_PAGINA
                 res_pagina = res[inicio:fin]
 
-                # Acciones masivas (sobre resultados filtrados)
                 st.markdown('<div class="zip-download-container">', unsafe_allow_html=True)
                 st.write(f"📂 **{total_resultados} resultado(s){label_filtro}** — Mostrando {inicio+1}–{min(fin, total_resultados)}")
                 cb1, cb2 = st.columns(2)
-                zip_res = generar_zip_blob([r[:7] for r in res], True, queries)
-                cb1.download_button("📥 Descargar Resultados Subrayados (.zip)", zip_res, "busqueda_resaltada.zip")
-                zip_orig = generar_zip_blob([r[:7] for r in res], False)
-                cb2.download_button("📥 Descargar Resultados Originales (.zip)", zip_orig, "busqueda_original.zip")
+                with cb1:
+                    if st.button("📥 Descargar Resultados Subrayados (.zip)", use_container_width=True):
+                        with st.spinner("Generando ZIP resaltado..."):
+                            zip_res = generar_zip_blob(res, True, queries)
+                        st.download_button("⬇️ Descargar subrayados", zip_res, "busqueda_resaltada.zip")
+                with cb2:
+                    if st.button("📥 Descargar Resultados Originales (.zip)", use_container_width=True):
+                        with st.spinner("Generando ZIP original..."):
+                            zip_orig = generar_zip_blob(res, False)
+                        st.download_button("⬇️ Descargar originales", zip_orig, "busqueda_original.zip")
                 st.markdown('</div>', unsafe_allow_html=True)
 
-                # Resultados de la página actual
                 for r in res_pagina:
                     coinciden = [q for q in queries if q in r[7]]
                     fecha_v = datetime.strptime(r[3], "%Y-%m-%d").strftime("%d/%m/%Y")
@@ -795,7 +954,6 @@ elif choice == "🔍 Buscador":
                     with st.expander(f"{tipo_emoji} {fecha_v} | {r[4]} (Coincide con: {', '.join(coinciden)})"):
                         render_editor_documento(r[:7], queries, es_inventario=False)
 
-                # Controles de paginación
                 if total_paginas > 1:
                     st.divider()
                     st.markdown(f'<div class="pagination-info">Página {pagina_actual + 1} de {total_paginas}</div>', unsafe_allow_html=True)
