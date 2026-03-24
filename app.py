@@ -279,7 +279,7 @@ def subir_pdf_storage(doc_id: str, pdf_bytes: bytes) -> str:
     supabase.storage.from_(BUCKET).upload(
         path,
         pdf_bytes,
-        {"content-type": "application/pdf", "upsert": "true"}
+        file_options={"content-type": "application/pdf", "upsert": "true"}
     )
     return path
 
