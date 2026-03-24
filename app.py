@@ -13,9 +13,9 @@ from datetime import datetime
 
 # Configuración profesional de la página
 st.set_page_config(
-    page_title="Gestión Cronosol - DIAN", 
+    page_title="CRONOSOL - DIAN", 
     layout="wide", 
-    page_icon="🛡️"
+    page_icon="🟡"
 )
 
 # --- ESTILOS PERSONALIZADOS ---
