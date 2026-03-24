@@ -279,7 +279,7 @@ def subir_pdf_storage(doc_id: str, pdf_bytes: bytes) -> str:
     supabase.storage.from_(BUCKET).upload(
         path,
         pdf_bytes,
-        file_options={"content-type": "application/pdf", "upsert": "true"}
+        {"content-type": "application/pdf", "upsert": "true"}
     )
     return path
 
@@ -358,6 +358,13 @@ def obtener_todos_documentos(tipo_filtro=None, order_desc=True):
          r["nombre_archivo"], r["paginas_json"], r["storage_path"])
         for r in rows
     ]
+
+def verificar_nombres_duplicados(nombres: list) -> set:
+    """Devuelve el conjunto de nombres que ya existen en la base de datos."""
+    if not nombres:
+        return set()
+    res = supabase.table("documentos").select("nombre_archivo").in_("nombre_archivo", nombres).execute()
+    return {r["nombre_archivo"] for r in (res.data or [])}
 
 def obtener_docs_rango_fecha(desde_str, hasta_str, tipo_filtro=None):
     query = supabase.table("documentos").select(
@@ -676,6 +683,10 @@ elif choice == "📤 Carga Masiva":
             else:
                 archivos_validos.append(f)
 
+        # Verificar nombres duplicados en Supabase
+        nombres_a_subir = [f.name for f in archivos_validos]
+        nombres_duplicados = verificar_nombres_duplicados(nombres_a_subir)
+
         st.session_state.pendientes = []
         for f in archivos_validos:
             b = f.read()
@@ -691,14 +702,18 @@ elif choice == "📤 Carga Masiva":
                     "blob": b,
                     "fecha": extraer_fecha_texto(full_text),
                     "tipo": tipo_up,
-                    "ocr": tiene_ocr
+                    "ocr": tiene_ocr,
+                    "duplicado": f.name in nombres_duplicados
                 })
 
     if st.session_state.pendientes:
         st.subheader("📋 Revisión antes de guardar")
         hay_errores_ocr = any(not d['ocr'] for d in st.session_state.pendientes)
+        hay_duplicados = any(d['duplicado'] for d in st.session_state.pendientes)
 
         docs_finales = []
+        confirmaciones_duplicados = {}
+
         for i, d in enumerate(st.session_state.pendientes):
             c_up1, c_up2 = st.columns([1, 2])
             with c_up1:
@@ -716,9 +731,24 @@ elif choice == "📤 Carga Masiva":
                     st.markdown("<small style='color:red;'>Este documento no tiene texto extraíble. Por favor, súbelo de nuevo con OCR o elimínalo.</small>", unsafe_allow_html=True)
                 else:
                     st.caption(f"Tipo asignado: {d['tipo']}")
+                    if d['duplicado']:
+                        st.warning(f"⚠️ **Nombre duplicado:** ya existe un documento llamado **{d['nombre']}** en el sistema.")
+                        confirmado = st.checkbox(
+                            "Confirmo que quiero subir este archivo de todas formas",
+                            key=f"dup_confirm_{i}"
+                        )
+                        confirmaciones_duplicados[i] = confirmado
+
             if d['ocr']:
                 docs_finales.append({**d, "fecha": new_f.strftime("%Y-%m-%d")})
             st.divider()
+
+        # Verificar que todos los duplicados hayan sido confirmados
+        duplicados_sin_confirmar = any(
+            not confirmaciones_duplicados.get(i, True)
+            for i, d in enumerate(st.session_state.pendientes)
+            if d['duplicado'] and d['ocr']
+        )
 
         if hay_errores_ocr:
             st.warning("Debe corregir o eliminar los archivos sin OCR para poder continuar.")
@@ -735,6 +765,9 @@ elif choice == "📤 Carga Masiva":
                     st.session_state.pendientes = [d for d in st.session_state.pendientes if d['ocr']]
                     st.rerun()
         else:
+            if duplicados_sin_confirmar:
+                st.error("⚠️ Debes confirmar los archivos con nombre duplicado antes de continuar.")
+
             btn_col1, btn_col2 = st.columns(2)
             with btn_col1:
                 cancel_ok_clicked = st.button("❌ Cancelar Carga", key="cancel_ok")
@@ -743,7 +776,11 @@ elif choice == "📤 Carga Masiva":
                     st.session_state.uploader_id += 1
                     st.rerun()
             with btn_col2:
-                confirmar_clicked = st.button("🚀 Confirmar y Guardar todo", key="btn_confirmar")
+                confirmar_clicked = st.button(
+                    "🚀 Confirmar y Guardar todo",
+                    key="btn_confirmar",
+                    disabled=duplicados_sin_confirmar
+                )
                 if confirmar_clicked:
                     errores = []
                     for doc in docs_finales:
